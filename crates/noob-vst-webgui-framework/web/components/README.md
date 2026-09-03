@@ -220,6 +220,7 @@ client.stream('band_dyn').on((d) => { dynGains = d; eq.update(); });
 | `sampleRate` | `48000` | Responses are computed at this rate; match the plug-in |
 | `minHz`, `maxHz` | `10`, `30000` | Log axis |
 | `rangeDb`    | `12`    | Vertical range ±dB (grid step follows) |
+| `offsetDb`   | `0`     | Constant dB offset on the composite curve, for a global make-up or auto gain; bands and nodes unaffected |
 | `points`     | `256`   | Frequencies per curve |
 | `gainQ`      | `false` | Gain-Q interaction: boolean or Param |
 | `dynGain`    | —       | `(i) => dB`, current dynamic gain per band |
@@ -259,6 +260,7 @@ client.stream('band_dyn').on((d) => { dynGains = d; eq.update(); });
 | `select(i, mode = 'set' \| 'toggle' \| 'range')`, `select(null)` | Selection |
 | `setDimmed(on)` | Dim everything (spectrum grab, solo) |
 | `setRange(minHz, maxHz)`, `setRangeDb(rangeDb)` | Zoom / vertical range |
+| `setOffsetDb(db)` | Shift the composite curve by a global make-up gain |
 | `xForFreq`, `freqForX`, `yForDb`, `dbForY` | Plot ↔ pixel mapping |
 | `showPreview(type, freq, gainDb, q?, slope?)`, `hidePreview()` | Dashed preview curve |
 | `shapeForPosition(x, y)` | The shape a new band would get there |

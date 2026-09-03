@@ -6,7 +6,8 @@
  * Params are live: the curve follows host automation, and dragging a node
  * edits the Params with proper begin/end gestures.
  *
- * Filter math mirrors the noob-q engine (`examples/noob-q/src/dsp/filters.rs`):
+ * Filter math mirrors the Noob-Q engine (`src/dsp/filters.rs` in the
+ * noob-q repository):
  * RBJ cookbook biquads, first-order sections for odd slopes, Butterworth
  * cascades for steep cuts, cascaded shelves for steep shelves.
  *
@@ -568,6 +569,7 @@ export class EqCurve {
    * @param {number} [opts.minHz=10] Left edge.
    * @param {number} [opts.maxHz=30000] Right edge.
    * @param {number} [opts.rangeDb=12] Vertical range is ±rangeDb.
+   * @param {number} [opts.offsetDb=0] Constant dB offset on the composite curve, for a global make-up or auto gain; bands and nodes are unaffected. See `setOffsetDb`.
    * @param {number} [opts.points=256] Frequencies per curve (`points + 1` samples, log-spaced).
    * @param {boolean|object} [opts.gainQ=false] Gain-Q interaction: a boolean or a Param (≥ 0.5 = on).
    * @param {(i:number)=>number} [opts.dynGain] Returns the current dynamic gain of band `i` in dB (from the plugin's band-gain stream); positions the dot on the dynamic-range bar.
@@ -601,6 +603,7 @@ export class EqCurve {
       minHz: 10,
       maxHz: 30000,
       rangeDb: 12,
+      offsetDb: 0,
       points: 256,
       gainQ: false,
       dynGain: null,
@@ -887,7 +890,7 @@ export class EqCurve {
    * @returns {number} dB
    */
   curveDb(freq) {
-    let db = 0;
+    let db = this.opts.offsetDb || 0;
     const sr = this.opts.sampleRate;
     const gq = this.gainQ;
     for (let i = 0; i < this.bands.length; i++) {
@@ -896,6 +899,18 @@ export class EqCurve {
       db += bandDb(bandCoefs(v.type, v.freq, v.gain, v.q, v.slope, sr, { gainQ: gq }), freq, sr);
     }
     return db;
+  }
+
+  /**
+   * Set a constant dB offset applied to the composite curve, for a global
+   * make-up or auto gain that shifts the whole response without changing
+   * any band. Individual band curves and the node handles are unaffected,
+   * because each still shows its own gain. Redraws.
+   * @param {number} db
+   */
+  setOffsetDb(db) {
+    this.opts.offsetDb = db || 0;
+    this._render();
   }
 
   /**
@@ -984,6 +999,7 @@ export class EqCurve {
     const total = new Float64Array(n + 1);
     const y0 = this.yForDb(0);
     const dimAll = this._dimAll;
+    const off = this.opts.offsetDb || 0;
     this.bands.forEach((b, bi) => {
       const v = this.bandValues(bi);
       const el = this._bandEls[bi];
@@ -1049,7 +1065,7 @@ export class EqCurve {
     });
     let d = '';
     for (let i = 0; i <= n; i++) {
-      d += (i === 0 ? 'M' : 'L') + this._xs[i].toFixed(1) + ' ' + this.yForDb(total[i]).toFixed(1);
+      d += (i === 0 ? 'M' : 'L') + this._xs[i].toFixed(1) + ' ' + this.yForDb(total[i] + off).toFixed(1);
     }
     this._curve.setAttribute('d', d);
     this._curveHit.setAttribute('d', d);

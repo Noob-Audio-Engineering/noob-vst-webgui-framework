@@ -8,6 +8,10 @@ the workspace version in `Cargo.toml`.
 
 ### Added
 
+- `EqCurve` takes an `offsetDb` option and a `setOffsetDb` setter: a
+  constant offset on the composite curve for a global make-up or auto gain,
+  leaving the band curves and node handles alone. Without it a page has to
+  transform the component's own paths, which an equaliser here was doing.
 - Debug builds assert that a published stream frame holds only finite
   values. A NaN or an infinity means the plug-in's processing has come
   apart, and passing it on only produces a blank meter with no explanation;
