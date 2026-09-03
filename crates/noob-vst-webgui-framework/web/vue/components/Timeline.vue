@@ -14,7 +14,9 @@
  *
  * Props:
  * - `series` (array, required): as the canvas component's series, except
- *   that `stream` is the stream **id** (a string), resolved on mount.
+ *   that `stream` is the stream **id** (a string), resolved on mount. That
+ *   includes `peaks`, which names the moments a series peaked; see the
+ *   components README.
  * - `seconds` (number, default 6): history shown.
  * - `gridSeries` (number, default 0), `gridStep` (number, default 12),
  *   `grid` (boolean, default true), `legend` (boolean, default true),

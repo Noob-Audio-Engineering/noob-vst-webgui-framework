@@ -454,7 +454,7 @@ new Timeline(el, {
 
 | option        | default | meaning |
 |---------------|---------|---------|
-| `series`      | `[]`    | `{ stream?, index = 0, unit = 'raw', range = [-60, 6], color, width = 1.5, fill = false, fillTo, label }` |
+| `series`      | `[]`    | `{ stream?, index = 0, unit = 'raw', range = [-60, 6], color, width = 1.5, fill = false, fillTo, label, peaks }` |
 | `seconds`     | `6`     | history shown; "now" is the right edge |
 | `maxRate`     | `240`   | samples per second kept per series (faster streams are thinned) |
 | `grid`, `gridSeries`, `gridStep` | `true`, `0`, `12` | horizontal grid for one series' range |
@@ -463,6 +463,29 @@ new Timeline(el, {
 | `gridColor`, `textColor` | CSS variables | `--noob-vst-webgui-framework-grid`, `--noob-vst-webgui-framework-text-dim` |
 
 Each series maps its own `range` onto the full height. **Methods:** `push(series, value)` for series without a stream, `destroy()`. Runs an animation loop.
+
+### Peak labels
+
+A series can name the moments it peaked, so the chart says how deep the worst of them went without the reader tracing the scale. Set `peaks` on that series; it is off by default and costs nothing when off.
+
+```js
+{
+  stream: client.stream('meter'), index: 4, unit: 'db', range: [-24, 0],
+  color: '#ffb547', label: 'GR', fill: true, fillTo: 0,
+  peaks: { direction: 'min', threshold: -3, format: (v) => `${v.toFixed(1)} dB` },
+}
+```
+
+| option       | default | meaning |
+|--------------|---------|---------|
+| `direction`  | `'max'` | which extreme counts; `'min'` for a value that falls, such as a gain reduction |
+| `threshold`  | none    | ignore peaks that never get past this value, in the series' unit |
+| `hysteresis` | `1`     | how far the value must come back from a candidate before it counts as a peak |
+| `minGapMs`   | `350`   | closest two labels may sit in time; a peak inside that window replaces the weaker one |
+| `max`        | `4`     | most labels drawn at once, the most significant first |
+| `format`     | one decimal | label text |
+
+Peaks are found as samples arrive, not by scanning at draw time, so a label marks a genuine local extreme rather than whichever sample happened to be lowest. Each belongs to a moment, so it scrolls left with its peak and leaves the chart with it. The label takes the series' own colour and sits clear of its fill, below the line for a falling series and above for a rising one; everything else about how it reads is the caller's `format`.
 
 ---
 

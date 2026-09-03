@@ -19,6 +19,16 @@ the workspace version in `Cargo.toml`.
   disagreeing with the audio by up to 1.87 dB.
 
 ### Added
+
+- `Timeline` series take a `peaks` option that names the moments a series
+  peaked, so a history chart says how deep the worst of them went without
+  the reader tracing the scale. Peaks are found as the samples arrive rather
+  than by scanning at draw time, so a label marks a genuine local extreme
+  and not whichever sample happened to be lowest, and each rides at its own
+  moment so it scrolls off the chart with its peak. Off by default,
+  allocating nothing and costing nothing when off; the label takes the
+  series' own colour and the caller's formatter, so the component decides
+  nothing about how it reads.
 - The browser client keeps `manifest.meta.sample_rate` current from the
   plug-in's `sample_rate` message, as the Vue layer already did. A manifest
   is built before a plug-in knows its rate, so a page that read it once put

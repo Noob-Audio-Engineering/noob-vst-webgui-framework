@@ -27,14 +27,44 @@
  * `devicePixelRatio`. Colours default to the `--noob-vst-webgui-framework-*`
  * variables (`grid`, `text`) when set on the container.
  *
+ * ## Peak labels
+ *
+ * A series may name the moments it peaked, so a glance at the chart says how
+ * deep the worst of them went without reading the scale. Set `peaks` on the
+ * series (see `TimelinePeaks`); it is off by default and costs nothing when
+ * off. Peaks are found as samples arrive rather than by scanning at draw
+ * time: a candidate is held while the value keeps going the right way and is
+ * confirmed once the value retreats by `hysteresis`, so a label marks a
+ * genuine local extreme rather than whichever sample happened to be lowest.
+ * Two labels are kept at least `minGapMs` apart, the stronger winning, and
+ * only the `max` most significant inside the window are drawn. Each label
+ * belongs to a moment, so it scrolls left with its peak and leaves with it.
+ *
+ * The label takes the series' own colour and the caller's `format`, so the
+ * component decides nothing about how it reads.
+ *
  * @example
  * new Timeline(el, {
  *   seconds: 8,
  *   series: [
  *     { stream: client.stream('meter'), index: 2, unit: 'linear', range: [-60, 6], color: '#58c4ff', label: 'out' },
- *     { stream: client.stream('meter'), index: 4, unit: 'db', range: [-24, 0], color: '#ffb547', label: 'GR', fill: true, fillTo: 0 },
+ *     {
+ *       stream: client.stream('meter'), index: 4, unit: 'db', range: [-24, 0],
+ *       color: '#ffb547', label: 'GR', fill: true, fillTo: 0,
+ *       peaks: { direction: 'min', threshold: -3, format: (v) => `${v.toFixed(1)} dB` },
+ *     },
  *   ],
  * });
+ */
+
+/**
+ * @typedef {object} TimelinePeaks
+ * @property {'max'|'min'} [direction='max'] Which extreme is a peak: `'min'` for a value that falls, such as a gain reduction.
+ * @property {number} [threshold] Ignore peaks that never get past this value, in the series' unit. Default: label them all.
+ * @property {number} [hysteresis=1] How far the value must come back from a candidate, in the series' unit, before it counts as a peak.
+ * @property {number} [minGapMs=350] Closest two labels may sit in time; a peak inside that window replaces the weaker one.
+ * @property {number} [max=4] Most labels drawn at once, the most significant first.
+ * @property {(value:number)=>string} [format] Label text. Default: one decimal place.
  */
 
 /**
@@ -48,7 +78,11 @@
  * @property {boolean} [fill=false] Fill towards `fillTo`.
  * @property {number} [fillTo] Baseline of the fill in the series' unit (default: bottom of `range`).
  * @property {string} [label] Legend text.
+ * @property {TimelinePeaks} [peaks] Name this series' peaks on the chart. Off by default.
  */
+
+/** The face the grid, the legend and the peak labels all share. */
+const LABEL_FONT = '10px system-ui, sans-serif';
 
 function cssVar(el, name, dflt) {
   const v = getComputedStyle(el).getPropertyValue(name).trim();
@@ -116,6 +150,7 @@ export class Timeline {
       _lastT: -Infinity,
       _off: null,
     }));
+    for (const s of this.series) this._initPeaks(s);
     const minGap = 1000 / this.opts.maxRate;
     this.series.forEach((s, i) => {
       if (!s.stream) return;
@@ -162,6 +197,97 @@ export class Timeline {
     s._head = (s._head + 1) % cap;
     if (s._n < cap) s._n++;
     s._lastT = t;
+    if (s._pk) this._trackPeak(s, v, t);
+  }
+
+  /**
+   * Resolve a series' `peaks` option and allocate everything the detector and
+   * the labels will need, so neither allocates later. Leaves `_pk` null when
+   * the series does not want labels, which is what makes the feature free.
+   * @param {object} s A resolved series.
+   */
+  _initPeaks(s) {
+    const p = s.peaks;
+    s._pk = null;
+    if (!p) return;
+    const minGapMs = p.minGapMs ?? 350;
+    const max = Math.max(1, Math.round(p.max ?? 4));
+    // Room for a full window of peaks at the closest spacing they may sit,
+    // so the ring never drops one that is still on screen.
+    const cap = Math.max(16, Math.ceil((this.opts.seconds * 1000) / minGapMs) + 4);
+    s._pk = {
+      // +1 labels the highest values, -1 the lowest; every comparison below
+      // multiplies by this, so one detector serves both directions.
+      sign: p.direction === 'min' ? -1 : 1,
+      hasThreshold: Number.isFinite(p.threshold),
+      threshold: p.threshold ?? 0,
+      hysteresis: Math.abs(p.hysteresis ?? 1),
+      minGapMs,
+      max,
+      // A value that never comes back (a sustained reduction) would hold a
+      // candidate for ever, so commit one that has been held a whole window.
+      holdMs: this.opts.seconds * 1000,
+      format: p.format || ((v) => v.toFixed(1)),
+    };
+    s._pkT = new Float64Array(cap);
+    s._pkV = new Float32Array(cap);
+    s._pkHead = 0;
+    s._pkN = 0;
+    s._candOn = false;
+    s._candV = 0;
+    s._candT = 0;
+    s._pkPick = new Int32Array(max);
+  }
+
+  /**
+   * One sample through the peak detector: hold the best value seen while the
+   * series keeps going the right way, and confirm it once the series comes
+   * back by `hysteresis` (or leaves the threshold, or has held a whole
+   * window). Allocation-free.
+   * @param {object} s
+   * @param {number} v Converted value.
+   * @param {number} t Timestamp.
+   */
+  _trackPeak(s, v, t) {
+    const p = s._pk;
+    const sg = p.sign;
+    if (!p.hasThreshold || sg * v >= sg * p.threshold) {
+      if (!s._candOn || sg * v > sg * s._candV) {
+        s._candV = v;
+        s._candT = t;
+        s._candOn = true;
+        return;
+      }
+      if (sg * s._candV - sg * v >= p.hysteresis || t - s._candT >= p.holdMs) {
+        this._commitPeak(s, s._candV, s._candT);
+        s._candOn = false;
+      }
+      return;
+    }
+    if (s._candOn) {
+      this._commitPeak(s, s._candV, s._candT);
+      s._candOn = false;
+    }
+  }
+
+  /** Store a confirmed peak, merging into the previous one when they are closer than `minGapMs`. */
+  _commitPeak(s, v, t) {
+    const p = s._pk;
+    const cap = s._pkT.length;
+    if (s._pkN > 0) {
+      const last = (s._pkHead - 1 + cap) % cap;
+      if (t - s._pkT[last] < p.minGapMs) {
+        if (p.sign * v > p.sign * s._pkV[last]) {
+          s._pkV[last] = v;
+          s._pkT[last] = t;
+        }
+        return;
+      }
+    }
+    s._pkT[s._pkHead] = t;
+    s._pkV[s._pkHead] = v;
+    s._pkHead = (s._pkHead + 1) % cap;
+    if (s._pkN < cap) s._pkN++;
   }
 
   /** Stop the animation, unsubscribe and remove the canvas. */
@@ -201,7 +327,7 @@ export class Timeline {
     return this._h - f * this._h;
   }
 
-  /** Grid, time ticks, each series (fill then line), legend. */
+  /** Grid, time ticks, each series (fill then line), peak labels, legend. */
   _draw() {
     const ctx = this._ctx;
     const w = this._w;
@@ -221,7 +347,7 @@ export class Timeline {
       ctx.strokeStyle = col.grid;
       ctx.fillStyle = col.text;
       ctx.lineWidth = 1;
-      ctx.font = '10px system-ui, sans-serif';
+      ctx.font = LABEL_FONT;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
       const [lo, hi] = gs.range;
@@ -297,17 +423,77 @@ export class Timeline {
       ctx.stroke();
     }
 
+    this._drawPeaks(ctx, now, span, w, h);
+
     // Legend
     if (this.opts.legend) {
-      ctx.font = '10px system-ui, sans-serif';
+      ctx.font = LABEL_FONT;
       ctx.textBaseline = 'top';
       ctx.textAlign = 'right';
       let x = w - 6;
-      for (const s of [...this.series].reverse()) {
+      // Right to left, so the first series ends up leftmost. Indexed rather
+      // than reversing a copy, which would allocate two arrays every frame.
+      for (let i = this.series.length - 1; i >= 0; i--) {
+        const s = this.series[i];
         if (!s.label) continue;
         ctx.fillStyle = s.color;
         ctx.fillText(s.label, x, 4);
         x -= ctx.measureText(s.label).width + 12;
+      }
+    }
+  }
+
+  /**
+   * Name the most significant peaks still on screen, for every series that
+   * asked for it. Each label rides at its peak's own moment, so it scrolls
+   * left and leaves with it. Returns immediately for a chart where no series
+   * wants labels, and allocates nothing: the winners are chosen by insertion
+   * into the series' own fixed pick list.
+   */
+  _drawPeaks(ctx, now, span, w, h) {
+    for (const s of this.series) {
+      const p = s._pk;
+      if (!p || s._pkN === 0) continue;
+      const cap = s._pkT.length;
+      const start = (s._pkHead - s._pkN + cap) % cap;
+      const sg = p.sign;
+
+      // Keep the `max` most significant peaks inside the window, ordered.
+      let picked = 0;
+      for (let k = 0; k < s._pkN; k++) {
+        const j = (start + k) % cap;
+        if (now - s._pkT[j] > span) continue;
+        const v = s._pkV[j];
+        let pos = picked;
+        while (pos > 0 && sg * s._pkV[s._pkPick[pos - 1]] < sg * v) pos--;
+        if (pos >= p.max) continue;
+        for (let q = Math.min(picked, p.max - 1); q > pos; q--) s._pkPick[q] = s._pkPick[q - 1];
+        s._pkPick[pos] = j;
+        if (picked < p.max) picked++;
+      }
+      if (picked === 0) continue;
+
+      // A falling series is drawn with its fill above the line, so its labels
+      // sit below the point, and the other way round for a rising one.
+      const below = sg < 0;
+      ctx.font = LABEL_FONT;
+      ctx.fillStyle = s.color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = below ? 'top' : 'bottom';
+      for (let q = 0; q < picked; q++) {
+        const j = s._pkPick[q];
+        const x = w - ((now - s._pkT[j]) * w) / span;
+        const y = this._y(s, s._pkV[j]);
+        const text = p.format(s._pkV[j]);
+        const half = ctx.measureText(text).width / 2;
+        ctx.beginPath();
+        ctx.arc(x, y, 1.75, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillText(
+          text,
+          Math.max(half + 2, Math.min(w - half - 2, x)),
+          below ? Math.min(h - 11, y + 5) : Math.max(1, y - 5),
+        );
       }
     }
   }
