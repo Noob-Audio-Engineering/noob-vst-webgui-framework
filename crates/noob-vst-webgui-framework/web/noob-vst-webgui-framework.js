@@ -1762,10 +1762,14 @@ export function mockManifest({ name = 'offline', meta = {}, params = [], streams
   const clamp01 = (n) => Math.max(0, Math.min(1, n));
   const outParams = params.map((p, index) => {
     const min = p.min ?? 0;
-    const max = p.max ?? 1;
     const taper = p.taper || 'linear';
     const skew = p.skew ?? 1;
     const steps = p.steps ?? (p.labels ? p.labels.length : p.toggle ? 2 : 0);
+    // A stepped parameter (`labels`, `toggle`, or an explicit `steps`) with no
+    // range of its own spans its step indices, which is what the plug-in
+    // publishes for one. Without this a default past the first step would
+    // normalise above 1 and clamp, so the page would open on the last step.
+    const max = p.max ?? (steps > 1 ? min + steps - 1 : 1);
     const dflt = p.default ?? min;
     const lo = Math.max(min, 1e-9);
     const toPlain = (n) => (taper === 'log' ? lo * Math.pow(max / lo, n) : taper === 'skew' ? min + (max - min) * Math.pow(n, 1 / skew) : min + (max - min) * n);
