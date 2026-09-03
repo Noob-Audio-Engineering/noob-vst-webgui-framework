@@ -1174,7 +1174,18 @@ export class NoobVstWebguiFrameworkClient {
         if (m.topic === 'store.all') this.store._hydrate(m.data && m.data.values);
         else if (m.topic === 'store.changed') this.store._changed(m.data.key, m.data.value);
         else if (m.topic === 'store.error') console.warn('bridge store:', m.data);
-        else this._ev.message.emit(m.topic, m.data);
+        else {
+          // The manifest is built before a plug-in knows its sample rate, so
+          // the rate in it is a placeholder until the host says otherwise.
+          // Keep `meta.sample_rate` current, and still pass the message on:
+          // a page that reads the rate once from the manifest would
+          // otherwise put every spectrum peak at the wrong frequency.
+          if (m.topic === 'sample_rate' && this.manifest && m.data && Number.isFinite(m.data.sample_rate)) {
+            this.manifest.meta = { ...this.manifest.meta, sample_rate: m.data.sample_rate };
+            this.meta = this.manifest.meta;
+          }
+          this._ev.message.emit(m.topic, m.data);
+        }
       }
       return;
     }

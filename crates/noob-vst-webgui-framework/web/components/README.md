@@ -221,6 +221,7 @@ client.stream('band_dyn').on((d) => { dynGains = d; eq.update(); });
 | `minHz`, `maxHz` | `10`, `30000` | Log axis |
 | `rangeDb`    | `12`    | Vertical range ±dB (grid step follows) |
 | `offsetDb`   | `0`     | Constant dB offset on the composite curve, for a global make-up or auto gain; bands and nodes unaffected |
+| `bandQMax`   | `40`    | Top of the plug-in's own band-Q range; the shelf-Q compression is scaled against it, so it must match the engine |
 | `points`     | `256`   | Frequencies per curve |
 | `gainQ`      | `false` | Gain-Q interaction: boolean or Param |
 | `dynGain`    | —       | `(i) => dB`, current dynamic gain per band |
@@ -288,6 +289,8 @@ with it.
 | `onePole(type, freq, sr)` | 6 dB/oct section by bilinear transform, same shape |
 | `magnitudeDb(coefs, freq, sr)` | `10·log10(|N|²/|D|²)` of `H(e^{jw})` |
 | `butterworthQ(order, k)` | `1 / (2·sin((2k−1)π / 2N))` |
+| `NEUTRAL_Q` | `1/√2`; a band Q of this leaves the textbook design alone |
+| `shelfQ(q)` | maps a band's Q onto a shelf's, log-compressed above `NEUTRAL_Q` so the cookbook form stays stable |
 | `effectiveQ(type, q, gainDb, gainQ)` | bell Q grows with `|gain|/30` when gain-Q is on |
 | `bandCoefs(type, freq, gainDb, q, slope, sr, { gainQ })` | the full cascade for a band (see the JSDoc for the per-type rules) |
 | `bandDb(coefs, freq, sr)` | sum of the sections' `magnitudeDb` |

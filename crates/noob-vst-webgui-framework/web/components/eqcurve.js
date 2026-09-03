@@ -203,6 +203,89 @@ export function butterworthQ(order, k) {
 }
 
 /**
+ * The Q of a Butterworth section, and of a shelf with no overshoot:
+ * `1/√2`. The cut and shelf paths both treat the band's Q as a factor on
+ * this, so a band Q of `NEUTRAL_Q` leaves the textbook design alone.
+ */
+export const NEUTRAL_Q = Math.SQRT1_2;
+
+/**
+ * Default top of a band's Q knob, the range `shelfQ` compresses against.
+ * It has to match the plug-in's own Q range or the drawn shelf will not
+ * agree with the audio; pass `bandQMax` to `bandCoefs` if yours differs.
+ */
+export const BAND_Q_MAX = 40;
+
+/** Top of the range a shelf's Q knob maps onto; see `shelfQ`. @private */
+const SHELF_Q_MAX = 8;
+
+/**
+ * Largest Q one shelving section may be designed at, given its own gain.
+ *
+ * The cookbook's shelf form is `α = sin ω₀ / 2Q` feeding a slope term
+ * `2√A·α`, so as `Q` grows `α → 0` and the poles reach the unit circle: a
+ * single +30 dB shelf at Q 40 designs a +62 dB peak, and an eight-section
+ * cascade of those reaches +213 dB. How much overshoot a given Q buys
+ * depends on how far the section's gain is from unity, so a gentle section
+ * in a long cascade can safely be more resonant than a single hot shelf.
+ * This curve holds one section to about 2 dB of overshoot across the whole
+ * gain range. Sections of a cascade share a corner, so their peaks add and
+ * the budget is shared out by `√sections`.
+ * @param {number} gainDb Gain of this one section.
+ * @param {number} sections How many sections share the corner.
+ * @returns {number} Q ceiling.
+ * @private
+ */
+function sectionQCeiling(gainDb, sections) {
+  const one = 1.2 + 2.6 * Math.exp(-Math.max(Math.abs(gainDb), 0.25) / 3.5);
+  return NEUTRAL_Q + (one - NEUTRAL_Q) / Math.sqrt(sections);
+}
+
+/**
+ * Map a band's Q knob onto a shelf's Q factor: identity up to `NEUTRAL_Q`,
+ * where the cookbook form is well behaved, then log-compressed onto
+ * `(NEUTRAL_Q, SHELF_Q_MAX]` so the rest of the knob keeps working and
+ * stays monotone. `sectionQCeiling` bounds what a section actually gets.
+ * @param {number} q Band Q.
+ * @returns {number} Shelf Q.
+ */
+export function shelfQ(q, qMax = BAND_Q_MAX) {
+  q = Math.max(q, 1e-3);
+  if (q <= NEUTRAL_Q) return q;
+  const top = Math.max(qMax, NEUTRAL_Q * 1.0001);
+  const t = Math.min(1, Math.max(0, Math.log(q / NEUTRAL_Q) / Math.log(top / NEUTRAL_Q)));
+  return NEUTRAL_Q * (SHELF_Q_MAX / NEUTRAL_Q) ** t;
+}
+
+/**
+ * The Q of each section of an `n`-section shelf cascade. A shelf steepens
+ * the way any filter does, by staggering its poles: section `k` takes the
+ * Butterworth Q of the combined order `2n`, so the resonant sections
+ * sharpen the corner while the damped ones keep the pass-band flat. `n`
+ * identical sections instead sum to one shelf of the full gain with no
+ * extra steepness. The band's Q scales the cascade through `shelfQ`, and
+ * each section is held to `sectionQCeiling` for its own gain. At the
+ * 6 dB/oct slope (`slope === 0`) the Q is locked.
+ * @param {number} n Sections.
+ * @param {number} q Band Q.
+ * @param {number} slope Index into `SLOPE_ORDERS`.
+ * @param {number} sectionGainDb Gain of one section, not the band's.
+ * @param {number} sections How many sections share the corner.
+ * @returns {number[]} `n` Q values.
+ * @private
+ */
+function shelfSectionQs(n, q, slope, sectionGainDb, sections, bandQMax) {
+  const scale = slope === 0 ? 1 : shelfQ(q, bandQMax) / NEUTRAL_Q;
+  const ceiling = sectionQCeiling(sectionGainDb, sections);
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    const base = n === 1 ? NEUTRAL_Q : butterworthQ(2 * n, k + 1);
+    out.push(Math.min(ceiling, Math.max(0.05, base * scale)));
+  }
+  return out;
+}
+
+/**
  * RBJ "Audio EQ Cookbook" biquad coefficients, normalized so `a0 = 1`
  * (mirrors `Coefs::rbj`). With `w0 = 2π·f/sr` (f clamped to 1 Hz … 0.499·sr),
  * `α = sin(w0) / (2Q)` (Q clamped to ≥ 0.001) and `A = 10^(gainDb/40)`:
@@ -349,20 +432,26 @@ export function effectiveQ(type, q, gainDb, gainQ) {
  *
  * * `peak` — one RBJ peak section at (`freq`, `gainDb`, effective Q).
  * * `notch`, `bandpass`, `allpass` — one section at gain 0.
- * * `lowshelf`, `highshelf` — `n = clamp(order/2, 1..8)` identical shelf
- *   sections, each carrying `gainDb / n`, so steeper slopes keep the total
- *   shelf gain while the transition sharpens.
+ * * `lowshelf`, `highshelf` — `n = clamp(order/2, 1..8)` shelf sections
+ *   each carrying `gainDb / n`, with the Butterworth Qs of the combined
+ *   order `2n` from `shelfSectionQs`, so a steeper slope really does
+ *   sharpen the transition. Identical sections would instead sum to one
+ *   shelf of the full gain at no extra steepness.
  * * `tiltshelf` — `n` pairs (same `n`) of a low shelf at `−g` and a high
- *   shelf at `+g` with `g = gainDb / (2n)`, pivoting at `freq`: the total
- *   tilt across the spectrum is `gainDb`.
+ *   shelf at `+g` with `g = gainDb / (2n)`, pivoting at `freq`, sharing the
+ *   same staggered Qs: the total tilt across the spectrum is `gainDb`.
  * * `flattilt` — one such pair with a fixed, very low Q of 0.18, which
  *   spreads the transition over the whole audible range (a "flat" tilt).
  * * `lowpass`, `highpass` (cuts) — a Butterworth of order `N =
  *   SLOPE_ORDERS[slope]`: `⌊N/2⌋` sections with `butterworthQ(N, k)`,
- *   except the last section whose Q is scaled by the band's Q relative to
- *   `1/√2` (`Q_k · q / √½`, clamped 0.05..40) so the user's Q adds or
- *   removes resonance at the corner while lower sections stay put; plus one
- *   `onePole` section when N is odd (6, 18, 30 dB).
+ *   except the *most* resonant section, `k = 1`, whose Q is scaled by the
+ *   band's Q relative to `1/√2` (clamped 0.05..40) so the knee goes from
+ *   soft to resonant; plus one `onePole` section when N is odd (6, 18,
+ *   30 dB).
+ *
+ * A band's Q is locked at the 6 dB/oct slope (`slope === 0`) for both the
+ * shelf and cut families, where a single first- or second-order section
+ * has no knee to shape.
  *
  * `slope` is an index into `SLOPE_ORDERS` (clamped); it only matters for
  * the types that use it. Gain-less types ignore `gainDb`.
@@ -377,7 +466,7 @@ export function effectiveQ(type, q, gainDb, gainQ) {
  * @param {boolean} [opts.gainQ=false] Apply `effectiveQ`.
  * @returns {{b0:number, b1:number, b2:number, a1:number, a2:number}[]} Sections to cascade; pass to `bandDb`.
  */
-export function bandCoefs(type, freq, gainDb, q, slope, sampleRate, { gainQ = false } = {}) {
+export function bandCoefs(type, freq, gainDb, q, slope, sampleRate, { gainQ = false, bandQMax = BAND_Q_MAX } = {}) {
   const order = SLOPE_ORDERS[Math.max(0, Math.min(SLOPE_ORDERS.length - 1, slope | 0))];
   q = effectiveQ(type, q, gainDb, gainQ);
   switch (type) {
@@ -390,18 +479,20 @@ export function bandCoefs(type, freq, gainDb, q, slope, sampleRate, { gainQ = fa
     case 'lowshelf':
     case 'highshelf': {
       const n = Math.max(1, Math.min(8, (order / 2) | 0));
-      const c = biquad(type, freq, gainDb / n, q, sampleRate);
-      return Array.from({ length: n }, () => c);
+      const g = gainDb / n;
+      return shelfSectionQs(n, q, slope, g, n, bandQMax).map((qk) => biquad(type, freq, g, qk, sampleRate));
     }
     case 'tiltshelf':
     case 'flattilt': {
-      const n = type === 'flattilt' ? 1 : Math.max(1, Math.min(8, (order / 2) | 0));
-      const qq = type === 'flattilt' ? 0.18 : q;
+      const flat = type === 'flattilt';
+      const n = flat ? 1 : Math.max(1, Math.min(8, (order / 2) | 0));
       const g = gainDb / (2 * n);
-      const lo = biquad('lowshelf', freq, -g, qq, sampleRate);
-      const hi = biquad('highshelf', freq, g, qq, sampleRate);
+      const qs = flat ? Array.from({ length: n }, () => 0.18) : shelfSectionQs(n, q, slope, g, 2 * n, bandQMax);
       const out = [];
-      for (let i = 0; i < n; i++) out.push(lo, hi);
+      for (let i = 0; i < n; i++) {
+        out.push(biquad('lowshelf', freq, -g, qs[i], sampleRate));
+        out.push(biquad('highshelf', freq, g, qs[i], sampleRate));
+      }
       return out;
     }
     case 'lowpass':
@@ -411,7 +502,10 @@ export function bandCoefs(type, freq, gainDb, q, slope, sampleRate, { gainQ = fa
       const out = [];
       for (let k = 1; k <= n2; k++) {
         let qk = butterworthQ(order, k);
-        if (k === n2) qk = Math.max(0.05, Math.min(40, (qk * q) / Math.SQRT1_2));
+        // The band's Q shapes the knee through the *most* resonant section,
+        // which is `k = 1`. Scaling the least resonant one leaves the peak
+        // height nearly independent of the order. Locked at 6 dB/oct.
+        if (k === 1 && slope !== 0) qk = Math.max(0.05, Math.min(40, (qk * q) / NEUTRAL_Q));
         out.push(biquad(type, freq, 0, qk, sampleRate));
       }
       if (odd) out.push(onePole(type, freq, sampleRate));
@@ -570,6 +664,7 @@ export class EqCurve {
    * @param {number} [opts.maxHz=30000] Right edge.
    * @param {number} [opts.rangeDb=12] Vertical range is ±rangeDb.
    * @param {number} [opts.offsetDb=0] Constant dB offset on the composite curve, for a global make-up or auto gain; bands and nodes are unaffected. See `setOffsetDb`.
+   * @param {number} [opts.bandQMax=BAND_Q_MAX] Top of the plug-in's own band-Q range; the shelf-Q compression is scaled against it, so it must match the engine.
    * @param {number} [opts.points=256] Frequencies per curve (`points + 1` samples, log-spaced).
    * @param {boolean|object} [opts.gainQ=false] Gain-Q interaction: a boolean or a Param (≥ 0.5 = on).
    * @param {(i:number)=>number} [opts.dynGain] Returns the current dynamic gain of band `i` in dB (from the plugin's band-gain stream); positions the dot on the dynamic-range bar.
@@ -604,6 +699,7 @@ export class EqCurve {
       maxHz: 30000,
       rangeDb: 12,
       offsetDb: 0,
+      bandQMax: BAND_Q_MAX,
       points: 256,
       gainQ: false,
       dynGain: null,
@@ -896,7 +992,7 @@ export class EqCurve {
     for (let i = 0; i < this.bands.length; i++) {
       const v = this.bandValues(i);
       if (!v.enabled) continue;
-      db += bandDb(bandCoefs(v.type, v.freq, v.gain, v.q, v.slope, sr, { gainQ: gq }), freq, sr);
+      db += bandDb(bandCoefs(v.type, v.freq, v.gain, v.q, v.slope, sr, { gainQ: gq, bandQMax: this.opts.bandQMax }), freq, sr);
     }
     return db;
   }
@@ -1016,7 +1112,7 @@ export class EqCurve {
         el.fill.setAttribute('d', '');
         return;
       }
-      const coefs = bandCoefs(v.type, v.freq, v.gain, v.q, v.slope, sr, { gainQ: gq });
+      const coefs = bandCoefs(v.type, v.freq, v.gain, v.q, v.slope, sr, { gainQ: gq, bandQMax: this.opts.bandQMax });
       let d = '';
       for (let i = 0; i <= n; i++) {
         const db = bandDb(coefs, this._freqs[i], sr);
@@ -1086,7 +1182,7 @@ export class EqCurve {
    */
   showPreview(type, freq, gainDb, q = 1, slope = 1) {
     const sr = this.opts.sampleRate;
-    const coefs = bandCoefs(type, freq, gainDb, q, slope, sr, { gainQ: this.gainQ });
+    const coefs = bandCoefs(type, freq, gainDb, q, slope, sr, { gainQ: this.gainQ, bandQMax: this.opts.bandQMax });
     const n = this.opts.points;
     let d = '';
     for (let i = 0; i <= n; i++) {

@@ -6,8 +6,27 @@ the workspace version in `Cargo.toml`.
 
 ## [Unreleased]
 
-### Added
+### Fixed
 
+- `EqCurve` cascaded a steep shelf as `n` identical sections carrying
+  `gain/n`, which sums to one shelf of the full gain at no extra steepness,
+  so a drawn shelf ignored its slope control. Sections now take the
+  Butterworth Qs of the combined order `2n`, a band's Q maps onto a shelf's
+  through the new `shelfQ` and each section is held to a ceiling from its
+  own gain, so the cookbook form cannot be driven onto the unit circle. For
+  a cut, the band's Q now shapes the most resonant section rather than the
+  least, and Q is locked at the 6 dB/oct slope. A drawn curve was
+  disagreeing with the audio by up to 1.87 dB.
+
+### Added
+- The browser client keeps `manifest.meta.sample_rate` current from the
+  plug-in's `sample_rate` message, as the Vue layer already did. A manifest
+  is built before a plug-in knows its rate, so a page that read it once put
+  every spectrum peak at half its true frequency at 96 kHz.
+- `EqCurve` takes a `bandQMax` option, the top of the plug-in's own band-Q
+  range that the shelf-Q compression is scaled against. It was assumed to be
+  40, which is what the equaliser here uses, and one with a different range
+  would have drawn a shelf that disagreed with its own audio.
 - `EqCurve` takes an `offsetDb` option and a `setOffsetDb` setter: a
   constant offset on the composite curve for a global make-up or auto gain,
   leaving the band curves and node handles alone. Without it a page has to
