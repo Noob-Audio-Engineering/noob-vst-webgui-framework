@@ -79,7 +79,7 @@ allocation-free:
 |---|---|
 | `param(i)`, `param_norm(i)` | atomic load |
 | `set_param_norm(i, norm)` | for parameters the audio thread owns (rare) |
-| `publish(stream, |buf| n)` | fill a frame in place; returns whether a frame was taken |
+| `publish(stream, |buf| n)` | fill a frame in place; returns whether a frame was taken; debug builds assert the values are finite |
 | `publish_slice(stream, &[f32])` | copy a slice as a frame |
 | `drain_events(|UiEvent| …)` | notes and controllers from pages |
 | `send_event(UiEvent)` | notes and controllers to pages (key lights) |

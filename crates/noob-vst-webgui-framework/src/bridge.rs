@@ -814,6 +814,15 @@ impl AudioHandle {
     /// and returns how many values it wrote; the count is clamped to the
     /// capacity. Stamps `seq` and `ts_ns`, then wakes the pump. Wait-free.
     /// Returns `false` for an unknown stream index.
+    ///
+    /// # Non-finite values
+    ///
+    /// Debug builds assert that every value written is finite. A NaN or an
+    /// infinity means the plug-in's own processing has come apart, and
+    /// passing it on helps nobody: the wire carries it faithfully, and a
+    /// page draws a blank meter or an empty curve with no clue why. Release
+    /// builds do not check, so this costs a development build a pass over
+    /// the frame and a shipped one nothing.
     #[inline]
     pub fn publish(&mut self, stream: usize, fill: impl FnOnce(&mut [f32]) -> usize) -> bool {
         let Some(w) = self.writers.get_mut(stream) else {
@@ -827,6 +836,10 @@ impl AudioHandle {
         let ts = self.shared.now_ns();
         let frame = w.slot();
         let n = fill(&mut frame.data).min(frame.data.len());
+        debug_assert!(
+            frame.data[..n].iter().all(|v| v.is_finite()),
+            "stream {stream}: published a non-finite value; the plug-in's processing has come apart"
+        );
         frame.len = n;
         frame.seq = seq;
         frame.ts_ns = ts;

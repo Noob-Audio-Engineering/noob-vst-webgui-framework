@@ -8,6 +8,11 @@ the workspace version in `Cargo.toml`.
 
 ### Added
 
+- Debug builds assert that a published stream frame holds only finite
+  values. A NaN or an infinity means the plug-in's processing has come
+  apart, and passing it on only produces a blank meter with no explanation;
+  release builds do not check, so it costs nothing shipped.
+
 - A third plug-in, Noob CompressorLab: two classic compressors in one
   plug-in, chosen per instance with a `model` parameter. The 1176 side is a
   FET compressor (feedback detector, ratio buttons with the all-buttons
