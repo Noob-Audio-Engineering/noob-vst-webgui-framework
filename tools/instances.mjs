@@ -35,7 +35,7 @@ function discoveryDir() {
   return join(base, 'vst3-web-stratum', 'instances');
 }
 
-async function probe(p, ms = 250) {
+async function probe(p, ms = 500) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), ms);
   try {

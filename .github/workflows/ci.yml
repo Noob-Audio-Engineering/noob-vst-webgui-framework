@@ -39,7 +39,7 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test -p vst3-web-stratum -p vst3-web-stratum-nih -p vst3-web-stratum-webview -p noob-q -p noob-wave
+        run: cargo test -p vst3-web-stratum -p vst3-web-stratum-nih -p vst3-web-stratum-webview -p noob-q -p noob-wave -p noob-compressorlab
 
       - name: Rustdoc
         run: cargo doc --no-deps --workspace --document-private-items
@@ -62,6 +62,10 @@ jobs:
         working-directory: examples/noob-wave/web
         run: npm install && npm run build
 
+      - name: Build noob-compressorlab SPA
+        working-directory: examples/noob-compressorlab/web
+        run: npm install && npm run build
+
       - name: Syntax-check the tools and the browser library
         run: |
           for f in tools/*.mjs crates/vst3-web-stratum/web/vst3-web-stratum.js crates/vst3-web-stratum/web/components/*.js crates/vst3-web-stratum/web/vue/*.js; do node --check "$f"; done
@@ -79,5 +83,5 @@ jobs:
 
       - name: Plug-in feature (embeds web/dist)
         run: |
-          cargo check -p noob-q -p noob-wave --features plugin
-          cargo check -p noob-q -p noob-wave --features plugin --release
+          cargo check -p noob-q -p noob-wave -p noob-compressorlab --features plugin
+          cargo check -p noob-q -p noob-wave -p noob-compressorlab --features plugin --release

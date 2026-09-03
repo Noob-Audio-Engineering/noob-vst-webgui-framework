@@ -21,4 +21,5 @@ devtools = ["vst3-web-stratum-webview/devtools"]
 vst3-web-stratum.workspace = true
 vst3-web-stratum-webview.workspace = true
 nih_plug.workspace = true
+serde_json.workspace = true
 log.workspace = true

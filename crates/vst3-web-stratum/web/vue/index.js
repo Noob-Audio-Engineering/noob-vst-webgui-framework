@@ -37,9 +37,19 @@ export {
   loadState,
   useStore,
   useStoredRef,
+  useStreamValue,
+  useStreamFrame,
+  useNeedle,
+  useKnobGesture,
+  useWindowSize,
 } from './useVst3WebStratum.js';
 export { freqToNote, midiToFreq, noteName, noteToFreq, noteLabel, parseValue } from './values.js';
 export { default as Knob } from './components/Knob.vue';
 export { default as Popover } from './components/Popover.vue';
 export { default as ContextMenu } from './components/ContextMenu.vue';
 export { default as LevelMeter } from './components/LevelMeter.vue';
+export { default as Timeline } from './components/Timeline.vue';
+export { default as LinePlot } from './components/LinePlot.vue';
+export { default as Segmented } from './components/Segmented.vue';
+export { default as Toggle } from './components/Toggle.vue';
+export { default as ResizeGrip } from './components/ResizeGrip.vue';

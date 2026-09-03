@@ -124,6 +124,13 @@ project, is in [Getting started](../../docs/GETTING-STARTED.md).
   network thread.
 - **Resize**: the page sends `client.send('resize', { width, height })`;
   the request is clamped, the host is asked, and the web view follows.
+  `fullscreen` `{ on }` grows the window to the monitor's work area and
+  back. The host may resize the window too (a frame drag): `can_resize`
+  answers `true` unless `size_limits` pins one size, `check_size_constraint`
+  clamps, and `set_size` records the size for the timer to apply. Either way
+  the size is remembered under the `window` store key and the editor
+  reopens at it. Host-driven resizing needs the patched nih-plug this
+  workspace builds against (see `docs/DEVELOPMENT.md`).
 - **Other messages** the page sends stay queued for the plug-in to read
   with `Vst3WebStratum::poll_message` from a non-real-time thread.
 - **State**: the UI store is written as one JSON object under the key
@@ -134,7 +141,8 @@ project, is in [Getting started](../../docs/GETTING-STARTED.md).
 
 Compile-checked as VST3 and CLAP; exercised through the examples' standalone
 binaries and a browser. A run inside a DAW is still pending, so resize
-negotiation and DPI behaviour in specific hosts are unverified.
+negotiation (in both directions) and DPI behaviour in specific hosts are
+unverified.
 
 ## Further reading
 

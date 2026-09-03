@@ -9,7 +9,7 @@ their own Vue components.
 
 ```js
 // with a bundler and @elyerinfox/vst3-web-stratum linked
-import { Knob, Meter, Spectrum, EqCurve, Scope, Keyboard, WavetableView, Envelope } from '@elyerinfox/vst3-web-stratum/components';
+import { Knob, Meter, Spectrum, EqCurve, Scope, Keyboard, WavetableView, Envelope, NeedleModel, Timeline, LinePlot } from '@elyerinfox/vst3-web-stratum/components';
 
 // or straight from the plug-in's server, no build step
 import { Knob, Meter } from '/vst3-web-stratum/components/index.js';
@@ -18,7 +18,8 @@ import { Knob, Meter } from '/vst3-web-stratum/components/index.js';
 Contents: [Conventions](#conventions) · [Knob](#knob) · [Meter](#meter) ·
 [Spectrum](#spectrum) · [EqCurve](#eqcurve) · [Filter helpers](#filter-design-helpers) ·
 [Scope](#scope) · [Keyboard](#keyboard) · [WavetableView](#wavetableview) ·
-[Envelope](#envelope) · [CSS variables](#css-variables)
+[Envelope](#envelope) · [NeedleModel](#needlemodel) · [Timeline](#timeline) ·
+[LinePlot](#lineplot) · [CSS variables](#css-variables)
 
 ## Conventions
 
@@ -403,6 +404,86 @@ stays visible next to 4 s. Handles: **attack** (horizontal), **decay**
 (horizontal = decay, vertical = sustain), **release** (horizontal); Shift ×0.2.
 **Methods:** `destroy()`. **Fields:** `el`, `svg`, `opts`.
 **Style:** `--vst3-web-stratum-grid`, `--vst3-web-stratum-text-dim`.
+
+---
+
+## NeedleModel
+
+`needle.js` — the behaviour of an analog needle meter with no drawing:
+value conversion, scale mapping and ballistics. A plug-in draws its own
+face (SVG, canvas, CSS) from the numbers, so nothing here dictates a look.
+
+```js
+const needle = new NeedleModel({ mode: 'reduction', unit: 'db', riseMs: 300 });
+client.stream('meter').on((d) => needle.set(d[4]));
+needle.start((m) => svgNeedle.setAttribute('transform', `rotate(${(m.angle() * 180) / Math.PI})`));
+```
+
+| option      | default    | meaning |
+|-------------|------------|---------|
+| `unit`      | `'db'`     | `'linear'` amplitude (converted with `20·log10(x) − reference`), `'db'`, or `'raw'` scale units |
+| `mode`      | `'level'`  | `'level'` rests at `min`; `'reduction'` rests at 0 and takes values as `−|v|` |
+| `reference` | `-18`      | dBFS that reads 0 for `'linear'` input |
+| `scale`     | `'vu'`     | voltage-proportional (marks crowd left, like a printed VU face) or `'linear'` |
+| `min`, `max` | `-20`, `3` | ends of the scale |
+| `riseMs`, `damping` | `300`, `0.62` | second-order needle: time to 99 % of a step, damping ratio (a VU meter; ~500 ms for a lazy optical meter) |
+| `overshoot` | `1.5`      | how far past `max` the needle may travel |
+
+**Methods:** `set(raw)` (returns the converted value and sets the target), `frac(value?)` (0..1 along the scale), `angle(value?, sweep = 90)` (radians, 0 up), `marks(values, sweep?)` (`{ value, frac, angle }[]`), `step(dt)` (advance the needle by `dt` seconds), `start(onFrame)` / `stop()` (drive `step` from `requestAnimationFrame`). **Fields:** `target`, `position`, `opts`.
+
+---
+
+## Timeline
+
+`timeline.js` — scrolling strip chart of values over the last few seconds.
+
+```js
+new Timeline(el, {
+  seconds: 8,
+  series: [
+    { stream: client.stream('meter'), index: 2, unit: 'linear', range: [-60, 6], color: '#58c4ff', label: 'out' },
+    { stream: client.stream('meter'), index: 4, unit: 'db', range: [-24, 0], color: '#ffb547', label: 'GR', fill: true, fillTo: 0 },
+  ],
+});
+```
+
+| option        | default | meaning |
+|---------------|---------|---------|
+| `series`      | `[]`    | `{ stream?, index = 0, unit = 'raw', range = [-60, 6], color, width = 1.5, fill = false, fillTo, label }` |
+| `seconds`     | `6`     | history shown; "now" is the right edge |
+| `maxRate`     | `240`   | samples per second kept per series (faster streams are thinned) |
+| `grid`, `gridSeries`, `gridStep` | `true`, `0`, `12` | horizontal grid for one series' range |
+| `timeTicks`, `legend` | `true` | one tick per second; labels top-right |
+| `background`  | `'transparent'` | fill behind the chart |
+| `gridColor`, `textColor` | CSS variables | `--vst3-web-stratum-grid`, `--vst3-web-stratum-text-dim` |
+
+Each series maps its own `range` onto the full height. **Methods:** `push(series, value)` for series without a stream, `destroy()`. Runs an animation loop.
+
+---
+
+## LinePlot
+
+`lineplot.js` — XY line chart: transfer curves, responses, lookup tables.
+
+```js
+const plot = new LinePlot(el, {
+  xRange: [-60, 0], yRange: [-60, 0], xLabel: 'in dB', yLabel: 'out dB',
+  series: [{ stream: client.stream('transfer'), color: '#ffb547', label: 'transfer' }, { xy: [[-60, -60], [0, 0]], color: 'rgba(255,255,255,0.2)', dash: [4, 4] }],
+});
+client.stream('meter').on((d) => plot.setMarker(inDb(d), outDb(d)));
+```
+
+| option        | default   | meaning |
+|---------------|-----------|---------|
+| `series`      | `[]`      | `{ points?: y[] over xRange, xy?: [x, y][], stream?, color, width = 1.5, dash, fill = false, label }` |
+| `xRange`, `yRange` | `[0, 1]` | axis ranges |
+| `xStep`, `yStep` | a fifth of the range | grid spacing |
+| `xLabel`, `yLabel` | `''`  | captions |
+| `grid`, `legend` | `true` | decorations |
+| `markerColor` | `'#ffffff'` | operating-point dot and guide lines |
+| `padding`     | `18`      | px kept for labels |
+
+A stream-bound series takes each frame as `y` values spread over `xRange`. **Methods:** `setSeries(i, ys)`, `setXY(i, pairs)`, `setMarker(x, y)` / `setMarker(null)`, `setRanges(xRange, yRange)`, `xFor(x)`, `yFor(y)`, `destroy()`. Redraws on data changes and resizes (no animation loop).
 
 ---
 

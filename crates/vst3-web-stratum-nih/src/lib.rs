@@ -133,8 +133,9 @@
 //! 3. **While open**: host changes arrive through
 //!    [`Editor::param_value_changed`] / [`Editor::param_values_changed`] and
 //!    are pushed to every connected page; page edits are queued and
-//!    forwarded to the host from a UI-thread timer; `resize` messages resize
-//!    the window.
+//!    forwarded to the host from a UI-thread timer; `resize` and
+//!    `fullscreen` messages resize the window, and a resize by the host (a
+//!    frame drag) reaches the web view through [`Editor::set_size`].
 //! 4. **Window closed**: the web view and timer are dropped. The server
 //!    keeps running so a browser tab that is also connected keeps working;
 //!    its edits are then forwarded directly from the network thread.
@@ -183,11 +184,24 @@
 //! # Messages the page can send
 //!
 //! `client.send(topic, data)` on the page delivers a JSON message to the
-//! bridge. The adapter handles one topic itself:
+//! bridge. The adapter handles two topics itself:
 //!
 //! * `"resize"` with `{ "width": w, "height": h }` — clamped to
 //!   [`EditorConfig::size_limits`], then the host is asked to resize the
-//!   editor window and, if it agrees, the web view is resized to match.
+//!   editor window and, if it agrees, the web view is resized to match and
+//!   the size is remembered under [`WINDOW_STORE_KEY`].
+//! * `"fullscreen"` with `{ "on": bool, "width"?, "height"? }` — on, the
+//!   window grows to the monitor's work area (the page's `width` / `height`
+//!   are the fallback where the work area is unknown); off, it returns to
+//!   the size it had before.
+//!
+//! Resizing also works the other way round: [`Editor::can_resize`] answers
+//! `true` unless the size limits pin one size, the host negotiates through
+//! [`Editor::check_size_constraint`] and hands the final size to
+//! [`Editor::set_size`], after which the web view follows on the next timer
+//! tick and the size is remembered like a page request. Upstream nih-plug
+//! has no host-to-plugin resizing; this workspace builds against a patched
+//! fork that adds those three `Editor` methods (see `DEVELOPMENT.md`).
 //!
 //! Every other topic is left in the queue for the plug-in to read with
 //! [`Vst3WebStratum::poll_message`] from any non-real-time thread (a nih-plug
@@ -223,14 +237,14 @@
 //! CLAP wrappers implement for every host nih-plug supports. As of this
 //! writing the examples have been exercised through their standalone
 //! binaries and compile-checked as plug-ins; a run inside a DAW is still
-//! pending, so treat host-specific behaviour (resize negotiation, DPI) as
-//! unverified.
+//! pending, so treat host-specific behaviour (resize negotiation in both
+//! directions, DPI) as unverified.
 
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -240,7 +254,17 @@ use vst3_web_stratum::{
     Assets, EditPhase, ParamSpec, PortPolicy, ServerConfig, ServerHandle, StreamSpec,
     Vst3WebStratum,
 };
-use vst3_web_stratum_webview::{EmbeddedWebView, RawParent, UiTimer, WebViewOptions};
+use vst3_web_stratum_webview::{
+    EmbeddedWebView, RawParent, UiTimer, WebViewOptions, monitor_work_area,
+};
+
+/// UI-store key under which the adapter remembers the editor size the page
+/// last asked for (`{ "width": w, "height": h }`, logical pixels). Written
+/// on every applied `resize` message and every host-driven resize (not on
+/// fullscreen requests) and read
+/// when the editor is spawned, so a plug-in reopens at the size the user
+/// chose; it travels with the plug-in state through the `StoreSlot`.
+pub const WINDOW_STORE_KEY: &str = "window";
 
 /// Build vst3-web-stratum [`ParamSpec`]s from a nih-plug [`Params`] object, in
 /// `param_map()` order, paired with the [`ParamPtr`] each one came from.
@@ -442,6 +466,11 @@ pub struct Vst3WebStratumEditor {
     /// The GUI context from the most recent spawn; kept so edits from a
     /// detached browser tab still reach the host after the window closes.
     context: Mutex<Option<Arc<dyn GuiContext>>>,
+    /// The size to go back to when the page leaves fullscreen.
+    restore: Mutex<Option<(u32, u32)>>,
+    /// Set by [`Editor::set_size`] when the host resized the window; the
+    /// UI-thread timer then resizes the web view and remembers the size.
+    host_resized: AtomicBool,
 }
 
 // SAFETY: every field is Send + Sync except `ptrs`, a Vec of `ParamPtr`,
@@ -525,6 +554,8 @@ impl Vst3WebStratumEditor {
             pending: Mutex::new(Some(server_cfg)),
             forward_interval: cfg.forward_interval,
             context: Mutex::new(None),
+            restore: Mutex::new(None),
+            host_resized: AtomicBool::new(false),
         });
         (editor, bridge)
     }
@@ -675,6 +706,16 @@ impl Editor for EditorHandle {
         }
         ed.sync_from_host();
         let url = ed.ensure_server();
+        // Reopen at the size the page last asked for, if the state has one.
+        if let Some(v) = ed.bridge.store_get(WINDOW_STORE_KEY) {
+            let sw = v.get("width").and_then(|x| x.as_f64()).unwrap_or(0.0) as u32;
+            let sh = v.get("height").and_then(|x| x.as_f64()).unwrap_or(0.0) as u32;
+            if sw != 0 && sh != 0 {
+                let (sw, sh) = ed.clamp_size(sw, sh);
+                ed.width.store(sw, Ordering::Relaxed);
+                ed.height.store(sh, Ordering::Relaxed);
+            }
+        }
         let (w, h) = ed.size();
 
         let webview: Rc<RefCell<Option<EmbeddedWebView>>> = Rc::new(RefCell::new(None));
@@ -682,6 +723,7 @@ impl Editor for EditorHandle {
         // Edits and UI messages: queued on the network thread, handled on
         // the UI thread by a native timer.
         let forward = ed.forwarder(context.clone());
+        let parent_raw = raw_parent(&parent);
         let timer = {
             let bridge = ed.bridge.clone();
             let editor = ed.clone();
@@ -689,27 +731,94 @@ impl Editor for EditorHandle {
             let ctx = context.clone();
             UiTimer::new(ed.forward_interval, move || {
                 bridge.drain_edits(|e| forward(e));
+                // The host resized the window (see `Editor::set_size`): the
+                // web view follows and the size is remembered like a page
+                // request.
+                if editor.host_resized.swap(false, Ordering::AcqRel) {
+                    let (w, h) = editor.size();
+                    if let Some(wv) = webview.borrow().as_ref()
+                        && let Err(e) = wv.resize(w, h)
+                    {
+                        nih_log!("vst3-web-stratum: resize: {e}");
+                    }
+                    let _ = bridge.store_set(
+                        WINDOW_STORE_KEY,
+                        serde_json::json!({ "width": w, "height": h }),
+                    );
+                }
+                // Take every queued message: `resize` requests are ours (only
+                // the newest one in a batch matters, a drag sends many), the
+                // rest go back in their original order for the plug-in.
+                let mut others = Vec::new();
+                let mut newest: Option<(u32, u32)> = None;
+                let mut fullscreen: Option<(bool, Option<(u32, u32)>)> = None;
+                let dims = |m: &vst3_web_stratum::Message| {
+                    let w = m.data.get("width").and_then(|v| v.as_f64()).unwrap_or(0.0) as u32;
+                    let h = m.data.get("height").and_then(|v| v.as_f64()).unwrap_or(0.0) as u32;
+                    (w != 0 && h != 0).then_some((w, h))
+                };
                 while let Some(m) = bridge.poll_message() {
                     if m.topic == "resize" {
-                        let w = m.data.get("width").and_then(|v| v.as_f64()).unwrap_or(0.0) as u32;
-                        let h = m.data.get("height").and_then(|v| v.as_f64()).unwrap_or(0.0) as u32;
-                        if w == 0 || h == 0 {
-                            continue;
+                        if let Some(size) = dims(&m) {
+                            newest = Some(size);
                         }
-                        let (w, h) = editor.clamp_size(w, h);
-                        editor.width.store(w, Ordering::Relaxed);
-                        editor.height.store(h, Ordering::Relaxed);
-                        if ctx.request_resize()
-                            && let Some(wv) = webview.borrow().as_ref()
-                            && let Err(e) = wv.resize(w, h)
-                        {
-                            nih_log!("bridge: resize: {e}");
-                        }
+                    } else if m.topic == "fullscreen" {
+                        // `{ "on": bool, "width"?, "height"? }`: the page's own
+                        // idea of the screen size is the fallback.
+                        let on = m.data.get("on").and_then(|v| v.as_bool()).unwrap_or(true);
+                        fullscreen = Some((on, dims(&m)));
                     } else {
-                        // Not ours: put it back for the plugin to read.
-                        bridge.requeue_message(m);
-                        break;
+                        others.push(m);
                     }
+                }
+                for m in others.into_iter().rev() {
+                    bridge.requeue_message(m);
+                }
+                // Ask the host for a size and follow with the web view.
+                let apply = |w: u32, h: u32, persist: bool| {
+                    let (w, h) = editor.clamp_size(w, h);
+                    if (w, h) == editor.size() {
+                        return;
+                    }
+                    editor.width.store(w, Ordering::Relaxed);
+                    editor.height.store(h, Ordering::Relaxed);
+                    if ctx.request_resize()
+                        && let Some(wv) = webview.borrow().as_ref()
+                        && let Err(e) = wv.resize(w, h)
+                    {
+                        nih_log!("vst3-web-stratum: resize: {e}");
+                    }
+                    if persist {
+                        // Remembered with the plug-in state, so the editor
+                        // reopens at this size (see `WINDOW_STORE_KEY`).
+                        let _ = bridge.store_set(
+                            WINDOW_STORE_KEY,
+                            serde_json::json!({ "width": w, "height": h }),
+                        );
+                    }
+                };
+                if let Some((w, h)) = newest {
+                    apply(w, h, true);
+                }
+                match fullscreen {
+                    Some((true, fallback)) => {
+                        if let Ok(mut r) = editor.restore.lock()
+                            && r.is_none()
+                        {
+                            *r = Some(editor.size());
+                        }
+                        let target = parent_raw.and_then(|p| monitor_work_area(&p)).or(fallback);
+                        if let Some((w, h)) = target {
+                            apply(w, h, false);
+                        }
+                    }
+                    Some((false, _)) => {
+                        let back = editor.restore.lock().ok().and_then(|mut r| r.take());
+                        if let Some((w, h)) = back {
+                            apply(w, h, true);
+                        }
+                    }
+                    None => {}
                 }
             })
         };
@@ -719,7 +828,7 @@ impl Editor for EditorHandle {
             ed.install_direct_hook();
         }
 
-        match (url.as_deref(), raw_parent(&parent)) {
+        match (url.as_deref(), parent_raw) {
             (Some(url), Some(p)) => {
                 let mut opts = WebViewOptions::new(url, w, h);
                 opts.devtools = ed.devtools;
@@ -757,6 +866,34 @@ impl Editor for EditorHandle {
     fn set_scale_factor(&self, _factor: f32) -> bool {
         // The web view handles DPI itself.
         false
+    }
+
+    /// `true` unless [`EditorConfig::size_limits`] pins one size: the host
+    /// may resize the window (a frame drag, a host-side size menu) and the
+    /// page follows through [`set_size`](Self::set_size).
+    fn can_resize(&self) -> bool {
+        self.0.min_size != self.0.max_size
+    }
+
+    /// The host proposes a size: answer with it clamped to
+    /// [`EditorConfig::size_limits`].
+    fn check_size_constraint(&self, width: u32, height: u32) -> (u32, u32) {
+        self.0.clamp_size(width, height)
+    }
+
+    /// The host resized the window (GUI thread). The size is clamped and
+    /// recorded, and the UI-thread timer resizes the web view and writes it
+    /// to the `window` store key on its next tick, so the page reopens at it
+    /// like a size it asked for itself. Always accepted.
+    fn set_size(&self, width: u32, height: u32) -> bool {
+        let ed = &self.0;
+        let (w, h) = ed.clamp_size(width, height);
+        if (w, h) != ed.size() {
+            ed.width.store(w, Ordering::Relaxed);
+            ed.height.store(h, Ordering::Relaxed);
+            ed.host_resized.store(true, Ordering::Release);
+        }
+        true
     }
 
     /// One parameter changed on the host side (automation, another UI, a

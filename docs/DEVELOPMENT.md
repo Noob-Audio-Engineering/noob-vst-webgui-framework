@@ -57,6 +57,24 @@ cargo build --release -p noob-wave --features plugin
 Bundling into `.vst3` / `.clap` folders follows nih-plug's conventions; see
 the README section "Build the plug-ins".
 
+## Patched nih-plug
+
+Upstream nih-plug has no host-to-plugin resizing: its VST3 view answers
+`canResize` with "no" and its CLAP gui extension rejects `set_size`, so a
+window could only grow when the plug-in asked. The workspace therefore
+builds against my fork, branch `host-resize` of
+`https://github.com/elyerinfox/nih-plug`, through a `[patch]` entry at the
+bottom of the root `Cargo.toml`. The fork adds three `Editor` methods with
+backwards-compatible defaults, `can_resize`, `check_size_constraint` and
+`set_size`, and implements them in the VST3 and CLAP wrappers; the adapter in
+`crates/vst3-web-stratum-nih` implements them for the web view. Everything
+else is upstream as of commit `f36931f7`.
+
+Dependents of the published crates need the same `[patch]` in their own
+workspace until the change lands upstream, because Cargo applies patches
+only from the root manifest. To move the workspace to a newer upstream,
+rebase the branch on it, push, and run `cargo update -p nih_plug`.
+
 ## Test
 
 ```sh

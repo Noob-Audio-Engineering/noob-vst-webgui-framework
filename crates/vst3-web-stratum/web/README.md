@@ -29,6 +29,7 @@ specified in [docs/WIRE.md](../../../docs/WIRE.md).
 - [Events, messages and helpers](#events-messages-and-helpers)
 - [The Vue layer (`@elyerinfox/vst3-web-stratum/vue`)](#the-vue-layer-elyerinfoxvst3-web-stratumvue)
 - [Theming](#theming)
+- [Offline (design) mode](#offline-design-mode)
 - [Loading without a bundler](#loading-without-a-bundler)
 - [Design notes](#design-notes)
 
@@ -374,14 +375,14 @@ Reserved message topics handled by the client: `store.all`, `store.changed`,
 ## The Vue layer (`@elyerinfox/vst3-web-stratum/vue`)
 
 ```js
-import { useVst3WebStratum, useParam, useStore, Knob, Popover, ContextMenu, LevelMeter } from '@elyerinfox/vst3-web-stratum/vue';
+import { useVst3WebStratum, useParam, useStore, useNeedle, Knob, Popover, ContextMenu, LevelMeter, Timeline, LinePlot, Segmented, Toggle } from '@elyerinfox/vst3-web-stratum/vue';
 ```
 
 ### Composables
 
 | function | returns | when to call |
 |----------|---------|--------------|
-| `configureClient(opts)` | — | before the first `useVst3WebStratum()`; merges `{ url, autoReconnect, pingIntervalMs }` over the defaults (`pingIntervalMs: 500`) |
+| `configureClient(opts)` | — | before the first `useVst3WebStratum()`; merges `{ url, autoReconnect, pingIntervalMs, offline }` over the defaults (`pingIntervalMs: 500`); `offline` enables the [design mode](#offline-design-mode) |
 | `getClient()` | the page's `Vst3WebStratumClient` (created on first use) | any time |
 | `useVst3WebStratum()` | `{ client, history, historyState, ready, connected, manifest, status, stats, modified }` | any time; render parameter UI behind `v-if="ready"` |
 | `useParam(id)` | a reactive **handle** (below) | once `ready`; throws for unknown ids |
@@ -392,6 +393,11 @@ import { useVst3WebStratum, useParam, useStore, Knob, Popover, ContextMenu, Leve
 | `useStoredRef(key, dflt)` | writable computed bound to one key (`v-model` works) | any time |
 | `stateToJson({ skip })` | `{ id: plain }` for every parameter | once `ready` |
 | `loadState(values, { reset = true, skip })` | — | once `ready`; one `setMany` frame, one history step; missing ids reset to defaults unless `reset: false`; clears `modified` |
+| `useStreamValue(id, { index = 0, unit = 'raw', initial = 0 })` | a `ref` following one element of the stream's frames, updated at most once per animation frame; `unit: 'linear'` converts amplitude to dBFS | once `ready` |
+| `useStreamFrame(id)` | a `shallowRef` of the latest frame (`Float32Array`), updated at most once per animation frame | once `ready` |
+| `useNeedle(id, opts)` | `{ frac, angle, position, target, model, set, marks, stop }`: a `NeedleModel` (ballistics + scale maths, no drawing) fed from `index` of the stream, or by `set()` when `id` is `null`; `frac` (0..1) and `angle` (degrees) update every frame so the page can draw its own meter face | once `ready`; stops on unmount |
+| `useKnobGesture(p, { sensitivity = 200, fine = 0.2, wheelStep, discrete, rotation })` | `{ handlers, dragging }`: pointer drag, wheel, double-click reset and arrow keys as begin / set / end gestures, to spread on any element (`v-on="handlers"`) while the page draws its own knob; `rotation: { toRotation, fromRotation }` makes a dial with a non-linear printed scale turn at a constant rate | once `ready` |
+| `useWindowSize({ min, max, aspect, storeKey = 'window' })` | `{ width, height, enabled, dragging, request(w, h), gripHandlers, fullscreen, setFullscreen(on), toggleFullscreen() }`: live sizing of the plug-in window (`resize` requests coalesced per frame, the adapter remembers the size under the `window` store key and reopens at it) and fullscreen intent (host window to the monitor's work area and back; the Fullscreen API in a tab); `enabled` is false in a browser tab | once `ready` |
 
 `useVst3WebStratum()` refs: `ready` (manifest in), `connected` (socket open),
 `manifest` (shallow ref; `meta.sample_rate` is patched when the plug-in
@@ -426,7 +432,7 @@ its own drag.
 
 ### Components
 
-All four live in `vue/components/` and are documented at the top of their
+All nine live in `vue/components/` and are documented at the top of their
 `<script setup>`.
 
 **`Knob`** — rotary control for a handle.
@@ -487,6 +493,57 @@ Escape.
 
 Fills its parent (which must have a size); exposes `resetClip()`.
 
+**`Timeline`** — scrolling history chart (wrapper over the canvas `Timeline`).
+
+| prop | default | meaning |
+|------|---------|---------|
+| `series` | required | `[{ stream: 'id', index, unit, range: [lo, hi], color, width, fill, fillTo, label }]`; `stream` is the id, resolved on mount |
+| `seconds` | `6` | history shown |
+| `gridSeries`, `gridStep` | `0`, `12` | which series' range the grid follows, and its spacing |
+| `grid`, `legend`, `timeTicks` | `true` | decorations |
+
+Every series maps its own `range` onto the full height, so levels in dBFS and a gain reduction in dB share one chart. Colours are the caller's; the grid uses `--vst3-web-stratum-grid` / `-text-dim`. Exposes `push(series, value)` for series without a stream. Fills its parent.
+
+**`LinePlot`** — XY curve chart (wrapper over the canvas `LinePlot`): transfer curves, responses, tables.
+
+| prop | default | meaning |
+|------|---------|---------|
+| `series` | required | `[{ stream: 'id' \| points: number[] \| xy: [x, y][], color, width, dash, fill, label }]`; reactive `points` / `xy` redraw |
+| `xRange`, `yRange` | `[0, 1]` | axis ranges (watched) |
+| `xStep`, `yStep` | a fifth of the range | grid spacing |
+| `xLabel`, `yLabel` | `''` | axis captions |
+| `marker` | `null` | `[x, y]` operating point, drawn with guide lines (watched) |
+| `grid`, `legend` | `true` | decorations |
+
+A stream-bound series takes each frame as `y` values spread uniformly over `xRange` (how a sticky curve stream arrives). Fills its parent.
+
+**`Segmented`** — one button per step of a discrete handle. **Unstyled**: it renders `<button>`s with classes `vst3-web-stratum-segmented` / `vst3-web-stratum-segment` / `is-on` and ARIA radio semantics, and sends a full gesture through `p.setIndex`; the page provides the look.
+
+| prop | default | meaning |
+|------|---------|---------|
+| `p` | required | a discrete handle (`steps` ≥ 2) |
+| `labels` | the handle's labels | custom button text |
+| `vertical`, `disabled` | `false` | |
+
+**`Toggle`** — two-state control for a toggle handle. **Unstyled**, like `Segmented`: root class `vst3-web-stratum-toggle` plus the variant and `is-on`; sends a full gesture through `p.setOn`.
+
+| prop | default | meaning |
+|------|---------|---------|
+| `p` | required | a toggle handle |
+| `labels` | `['Off', 'On']` | text beside the switch, or both rocker positions |
+| `variant` | `'switch'` | `'switch'` (track + knob), `'rocker'` (two positions), `'button'` (latching; the slot is its text) |
+| `vertical`, `disabled` | `false` | |
+
+**`ResizeGrip`** — drag grip that resizes the plug-in window live through `useWindowSize`. **Unstyled**: root class `vst3-web-stratum-resize-grip` plus `is-dragging`, a slot for artwork; the page positions it (fixed, bottom-right). Renders nothing in a browser tab.
+
+| prop | default | meaning |
+|------|---------|---------|
+| `min`, `max` | `[480, 320]`, `[7680, 4320]` | size limits in CSS pixels (the adapter clamps again) |
+| `aspect` | `null` | lock width / height |
+| `storeKey` | `'window'` | where the chosen size is remembered |
+
+For an analog needle meter there is no component on purpose: the look is the plug-in's. Use `useNeedle` (above) or the canvas `NeedleModel` for the behaviour and draw the face yourself.
+
 ### Value helpers (`@elyerinfox/vst3-web-stratum/vue`)
 
 | function | notes |
@@ -520,6 +577,46 @@ example apps do it inside Tailwind's `@theme`):
 
 The Vue components use scoped, plain CSS (no Tailwind classes), so they work
 in any app; only the example apps' own components rely on Tailwind.
+
+## Offline (design) mode
+
+A page can be built and styled before its plug-in exists, or without running
+it. Give the client an `offline` option describing the parameters and streams
+the plug-in *will* publish; if no real manifest arrives within `timeoutMs`
+(default 1200 ms, or at once with `immediate: true`) the client applies that
+description, marks itself `ready`, keeps edits local, hydrates an empty
+store, and feeds synthetic frames from the generators in `frames`. It keeps
+reconnecting in the background, and the first real manifest ends offline
+mode transparently (`client.offline` is `true` while it lasts; `connected`
+stays `false`, so a status dot stays honest). A `'message'` with topic
+`offline` fires when it engages.
+
+```js
+// web/src/dev/manifest.js: the ids must match what the plug-in publishes
+export const offline = {
+  name: 'my-plug-in',
+  meta: { sample_rate: 48000 },
+  params: [
+    { id: 'input', name: 'Input', min: -48, max: 0, default: -24, unit: 'dB' },
+    { id: 'attack', min: 20, max: 800, default: 128, unit: 'µs', taper: 'log' },
+    { id: 'ratio', labels: ['4', '8', '12', '20', 'All'] },
+    { id: 'bypass', toggle: true },
+  ],
+  streams: [{ id: 'meter', capacity: 6, kind: 'meter' }],
+  frames: { meter: (t) => [0.4, 0.4, 0.3, 0.3, -8 * Math.abs(Math.sin(t * 2)), 0] },
+};
+
+// main.js (Vue) — only in development builds
+import { configureClient } from '@elyerinfox/vst3-web-stratum/vue';
+if (import.meta.env.DEV) configureClient({ offline });
+```
+
+`mockManifest(spec)` is the builder behind it, exported for tests and
+tooling. Minimal param specs are `{ id, name?, unit?, group?, min = 0, max =
+1, default = min, taper = 'linear' | 'log' | 'skew', skew?, steps?, labels?,
+toggle?, automatable? }`; stream specs `{ id, name?, kind = 'raw', capacity
+= 1, channels = 1, meta?, sticky? }`. The 65-point taper table and
+`default_norm` are derived.
 
 ## Loading without a bundler
 

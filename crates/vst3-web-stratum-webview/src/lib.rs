@@ -27,7 +27,7 @@
 //! | platform | engine    | how                                                   | status |
 //! |----------|-----------|-------------------------------------------------------|--------|
 //! | Windows  | WebView2  | `wry` child of the host `HWND`                        | supported, exercised by the examples |
-//! | macOS    | WKWebView | `wry` child of the host `NSView`                      | supported by the code path; not yet exercised by the author |
+//! | macOS    | WKWebView | `wry` child of the host `NSView`                      | supported by the code path; not yet exercised by me           |
 //! | Linux    | WebKitGTK | needs a GTK parent; a raw X11 window id is not enough | [`Error::Unsupported`]; adapters fall back to the system browser |
 //!
 //! Requirements:
@@ -460,5 +460,50 @@ impl Drop for UiTimer {
     fn drop(&mut self) {
         #[cfg(windows)]
         win_timer::stop(self.id);
+    }
+}
+
+/// The usable size of the monitor a host window is on, in logical pixels
+/// (the work area: the screen minus the taskbar), so a page can declare
+/// fullscreen intent and the plug-in can ask the host for exactly that size.
+///
+/// Windows only for now (`MonitorFromWindow` + `GetMonitorInfoW` on the
+/// parent window); `None` where the platform or the handle does not allow
+/// it, in which case callers fall back to the size the page reports from
+/// `screen.availWidth` / `screen.availHeight`.
+pub fn monitor_work_area(parent: &RawParent) -> Option<(u32, u32)> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::Graphics::Gdi::{
+            GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+        };
+        let RawWindowHandle::Win32(h) = parent.0 else {
+            return None;
+        };
+        // SAFETY: plain Win32 queries on a window handle the host gave us;
+        // MONITORINFO is a POD struct whose size field we initialise.
+        unsafe {
+            let hwnd = h.hwnd.get() as *mut core::ffi::c_void;
+            let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            if monitor.is_null() {
+                return None;
+            }
+            let mut info: MONITORINFO = core::mem::zeroed();
+            info.cbSize = core::mem::size_of::<MONITORINFO>() as u32;
+            if GetMonitorInfoW(monitor, &mut info) == 0 {
+                return None;
+            }
+            let r = info.rcWork;
+            let (w, h) = (
+                (r.right - r.left).max(0) as u32,
+                (r.bottom - r.top).max(0) as u32,
+            );
+            if w == 0 || h == 0 { None } else { Some((w, h)) }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = parent;
+        None
     }
 }

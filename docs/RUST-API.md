@@ -162,8 +162,12 @@ params.ui_store.attach(&bridge);
 | `EditorHandle: nih_plug::Editor` | what `Plugin::editor` returns; `spawn` embeds the web view, installs the UI timer, syncs from the host |
 | `StoreSlot::{new, attach, serialize_into, deserialize_from}`, `StoreSlot::KEY` | persist the UI store in plug-in state |
 
-Messages the adapter consumes: `resize` `{ width, height }`. Everything
-else is left in the queue for `Vst3WebStratum::poll_message`.
+Messages the adapter consumes: `resize` `{ width, height }` and
+`fullscreen` `{ on, width?, height? }`. Everything else is left in the queue
+for `Vst3WebStratum::poll_message`. `EditorHandle` also implements the
+host-to-plugin side, `can_resize` / `check_size_constraint` / `set_size`,
+which exist only in the patched nih-plug this workspace builds against (see
+[DEVELOPMENT.md](DEVELOPMENT.md)).
 
 ## vst3-web-stratum-webview
 

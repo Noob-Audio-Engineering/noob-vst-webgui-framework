@@ -6,11 +6,17 @@ members = [
     "crates/vst3-web-stratum-nih",
     "examples/noob-q",
     "examples/noob-wave",
+    "examples/noob-compressorlab",
 ]
 # `cargo build` / `cargo test` at the root only touch these. The nih-plug
 # adapter and the `plugin` feature of the examples pull nih-plug from git and
 # are built explicitly (see README).
-default-members = ["crates/vst3-web-stratum", "examples/noob-q", "examples/noob-wave"]
+default-members = [
+    "crates/vst3-web-stratum",
+    "examples/noob-q",
+    "examples/noob-wave",
+    "examples/noob-compressorlab",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -36,3 +42,6 @@ futures-util = { version = "0.3", default-features = false, features = ["sink"] 
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+[patch."https://github.com/robbert-vdh/nih-plug.git"]
+nih_plug = { git = "https://github.com/elyerinfox/nih-plug.git", branch = "host-resize" }

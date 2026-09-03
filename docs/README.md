@@ -1,7 +1,8 @@
 ## Examples
 
 I wrote the examples as humorous, affectionate spoofs of products I admire
-(Noob-Q of FabFilter's Pro-Q; Noob-Wave of the classic wavetable synths),
+(Noob-Q of FabFilter's Pro-Q; Noob-Wave of the classic wavetable synths; the
+Noob CompressorLab of the UREI 1176 and the Teletronix LA-2A),
 to exercise the framework at product size. They are tributes, not parity
 replacements, and I do not publish them.
 
@@ -45,6 +46,10 @@ building a plug-in on vst3-web-stratum; the references are for looking things up
 | [PROQ4-FEATURES.md](PROQ4-FEATURES.md) | The feature inventory extracted from the Pro-Q 4 manual. |
 | [../examples/noob-wave/README.md](../examples/noob-wave/README.md) | Noob-Wave, the wavetable synth: DSP, parameters, streams, plug-in, standalone. |
 | [../examples/noob-wave/web/README.md](../examples/noob-wave/web/README.md) | The Noob-Wave Vue SPA. |
+| [../examples/noob-compressorlab/README.md](../examples/noob-compressorlab/README.md) | Noob CompressorLab, the 1176-style FET and LA-2A-style optical compressors in one plug-in: DSP, parameters, streams, plug-in, standalone. |
+| [../examples/noob-compressorlab/research/1176.md](../examples/noob-compressorlab/research/1176.md) | How the 1176 works and how it is simulated, with sources. |
+| [../examples/noob-compressorlab/research/LA-2A.md](../examples/noob-compressorlab/research/LA-2A.md) | How the LA-2A works and how it is simulated, with sources. |
+| [../examples/noob-compressorlab/web/README.md](../examples/noob-compressorlab/web/README.md) | The CompressorLab Vue SPA: the model switch, both faceplates, window sizing. |
 
 ## Conventions used in these documents
 

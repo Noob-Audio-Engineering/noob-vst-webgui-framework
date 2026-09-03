@@ -160,6 +160,7 @@ change, on the net thread). Two helpers cover persistence:
 | `presets.user` | both | the user's preset list `[{ name, values, ... }]` |
 | `presets.favorites` | Noob-Q | array of favourite preset names |
 | `eqmatch.references` | Noob-Q | saved reference spectra `[{ name, data: number[128] }]` |
+| `window` | the nih-plug adapter | `{ width, height }`, the editor size the page last requested; the editor reopens at it |
 
 ## Several windows of one instance
 

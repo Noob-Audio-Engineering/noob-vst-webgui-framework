@@ -378,6 +378,8 @@ a new plug-in can reuse them.
 | topic | direction | data | who handles it |
 |---|---|---|---|
 | `resize` | client → server | `{ "width": w, "height": h }` | the nih-plug adapter: asks the host to resize the editor and resizes the web view; standalones ignore it |
+| `fullscreen` | client → server | `{ "on": bool, "width"?, "height"? }` | the nih-plug adapter: on, resizes the editor to the monitor's work area (the page's `screen.availWidth/Height` is the fallback) and keeps the previous size; off, restores it. Standalones ignore it (a tab uses the Fullscreen API itself) |
+| `store` key `window` | written by the adapter | `{ "width": w, "height": h }` | the last size the page asked for with `resize` or the host set by resizing the window; the editor reopens at it (not written for fullscreen sizes) |
 | `reset` | client → server | none | the example standalones: every parameter back to its default |
 | `status` | server → client, about once a second | free-form (`clients`, `blocks`, `edits`, `dropped`, `sample_rate`, latency) | the example pages show it in their status line |
 | `sample_rate` | server → client | `{ "sample_rate": hz }` | the Vue layer patches `manifest.meta.sample_rate` |
@@ -394,7 +396,7 @@ Besides `/ws`:
   regardless of name. Instance features are scoped to one product on
   purpose. Each server writes `<pid>-<port>.json` to the discovery directory
   on start and removes it on stop; records whose server does not answer
-  `/instance` within 250 ms, or answers with another pid, are deleted. The
+  `/instance` within 500 ms, or answers with another pid, are deleted. The
   directory is `%LOCALAPPDATA%\vst3-web-stratum\instances` on Windows,
   `~/Library/Application Support/vst3-web-stratum/instances` on macOS and
   `$XDG_RUNTIME_DIR/vst3-web-stratum/instances` (else `~/.local/state/vst3-web-stratum/instances`)

@@ -23,7 +23,7 @@ noob-wave  39288   4243   http://127.0.0.1:4243/
 ```
 
 Without a port it reads every `<pid>-<port>.json` in the discovery
-directory, fetches `/instance` from that port with a 250 ms timeout, keeps
+directory, fetches `/instance` from that port with a 500 ms timeout, keeps
 the record if the answer carries the same pid, and deletes the file
 otherwise (a crashed instance). With a port it prints what that server's
 `/instances` returns, which is the same scan done server-side. See

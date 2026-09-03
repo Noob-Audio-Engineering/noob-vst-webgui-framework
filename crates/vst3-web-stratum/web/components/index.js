@@ -69,3 +69,6 @@ export { Scope } from './scope.js';
 export { Keyboard } from './keyboard.js';
 export { WavetableView } from './wavetable.js';
 export { Envelope } from './envelope.js';
+export { NeedleModel } from './needle.js';
+export { Timeline } from './timeline.js';
+export { LinePlot } from './lineplot.js';

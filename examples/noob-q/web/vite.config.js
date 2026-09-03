@@ -34,6 +34,10 @@ export default defineConfig({
     preserveSymlinks: true,
     dedupe: ['vue'],
   },
+  // The framework is linked from the repository (file:); keep it out of the
+  // dependency pre-bundle so edits to it hot-reload instead of being frozen
+  // into node_modules/.vite at start-up.
+  optimizeDeps: { exclude: ['@elyerinfox/vst3-web-stratum'] },
   build: {
     outDir: 'dist',
     emptyOutDir: true,

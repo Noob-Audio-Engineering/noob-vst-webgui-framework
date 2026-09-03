@@ -46,8 +46,9 @@
  * `useStoredRef()` may be called early; they fill in when the store is
  * hydrated.
  */
-import { computed, reactive, ref, shallowRef } from 'vue';
+import { computed, getCurrentScope, onScopeDispose, reactive, ref, shallowRef } from 'vue';
 import { History, Vst3WebStratumClient } from '../vst3-web-stratum.js';
+import { NeedleModel } from '../components/needle.js';
 
 /**
  * @typedef {object} ParamHandle
@@ -373,4 +374,328 @@ export function loadState(values, { reset = true, skip = null } = {}) {
   }
   getClient().setMany(edits);
   modified.value = false;
+}
+
+// ---------------------------------------------------------------------------
+// Reactive stream values
+// ---------------------------------------------------------------------------
+
+/**
+ * A `ref` that follows one element of a stream's frames, updated at most
+ * once per animation frame (so a block-rate stream does not trigger a
+ * render per block). `unit` converts like the meters do: `'linear'`
+ * amplitude to dBFS, `'db'` / `'raw'` as is. Call once `ready` is true.
+ *
+ *   const gr = useStreamValue('meter', { index: 4, unit: 'db' });   // gr.value
+ *
+ * @param {string} id Stream id.
+ * @param {{ index?: number, unit?: 'raw'|'linear'|'db', initial?: number }} [opts]
+ * @returns {import('vue').Ref<number>}
+ */
+export function useStreamValue(id, { index = 0, unit = 'raw', initial = 0 } = {}) {
+  const value = ref(initial);
+  const s = getClient().stream(id);
+  let latest = initial;
+  let pending = false;
+  const off = s.on((d) => {
+    const raw = d[index] ?? 0;
+    latest = unit === 'linear' ? (raw > 0 ? 20 * Math.log10(raw) : -200) : raw;
+    if (!pending) {
+      pending = true;
+      requestAnimationFrame(() => {
+        pending = false;
+        value.value = latest;
+      });
+    }
+  });
+  if (getCurrentScope()) onScopeDispose(off);
+  return value;
+}
+
+/**
+ * A `shallowRef` holding the latest frame (`Float32Array`) of a stream,
+ * updated at most once per animation frame. The array is the frame the
+ * client received; copy it if you keep it. Call once `ready` is true.
+ *
+ * @param {string} id Stream id.
+ * @returns {import('vue').ShallowRef<Float32Array|null>}
+ */
+export function useStreamFrame(id) {
+  const frame = shallowRef(null);
+  const s = getClient().stream(id);
+  let latest = null;
+  let pending = false;
+  const off = s.on((d) => {
+    latest = d;
+    if (!pending) {
+      pending = true;
+      requestAnimationFrame(() => {
+        pending = false;
+        frame.value = latest;
+      });
+    }
+  });
+  if (getCurrentScope()) onScopeDispose(off);
+  return frame;
+}
+
+/**
+ * A needle meter's behaviour as reactive state, for a page that draws its
+ * own meter face. Feeds a `NeedleModel` from one element of a stream (or
+ * from `set(value)` when `id` is `null`) and exposes the animated position
+ * once per frame: `frac` (0..1 along the scale), `angle` (degrees, 0 up),
+ * `position` (scale units) and `target`. `marks(values)` gives positions
+ * for scale marks. Options are the `NeedleModel` options plus `index`,
+ * `sweep` (degrees, default 90) and `autoStart` (default true). Call once
+ * `ready` is true; stops when the component unmounts.
+ *
+ *   const gr = useNeedle('meter', { index: 4, unit: 'db', mode: 'reduction' });
+ *   <line :transform="`rotate(${gr.angle})`" />
+ *
+ * @param {string|null} id
+ * @param {object} [opts]
+ * @returns {{ frac: import('vue').Ref<number>, angle: import('vue').Ref<number>, position: import('vue').Ref<number>, target: import('vue').Ref<number>, model: import('../components/needle.js').NeedleModel, set: (v: number) => void, marks: (values: number[]) => { value: number, frac: number, angle: number }[], stop: () => void }}
+ */
+export function useNeedle(id, opts = {}) {
+  const { index = 0, sweep = 90, autoStart = true, ...modelOpts } = opts;
+  const model = new NeedleModel(modelOpts);
+  const frac = ref(model.frac());
+  const angle = ref((model.angle(undefined, sweep) * 180) / Math.PI);
+  const position = ref(model.position);
+  const target = ref(model.target);
+  let off = null;
+  if (id) off = getClient().stream(id).on((d) => (target.value = model.set(d[index] ?? 0)));
+  const publish = () => {
+    frac.value = model.frac();
+    angle.value = (model.angle(undefined, sweep) * 180) / Math.PI;
+    position.value = model.position;
+  };
+  if (autoStart) model.start(publish);
+  const stop = () => {
+    model.stop();
+    off?.();
+    off = null;
+  };
+  if (getCurrentScope()) onScopeDispose(stop);
+  return {
+    frac,
+    angle,
+    position,
+    target,
+    model,
+    set: (v) => (target.value = model.set(v)),
+    marks: (values) => model.marks(values, sweep).map((m) => ({ ...m, angle: (m.angle * 180) / Math.PI })),
+    stop,
+  };
+}
+
+/**
+ * Knob behaviour without a knob: pointer drag (vertical, Shift for fine),
+ * wheel (one gesture per burst of notches), double-click to reset, arrow /
+ * Home / End keys, all wrapped in begin / set / end gestures on a handle.
+ * Spread the returned `handlers` on any element and draw the control
+ * yourself from `p.norm`; `dragging` is a ref for hover / active styling.
+ *
+ *   const { handlers, dragging } = useKnobGesture(input, { sensitivity: 200 });
+ *   <svg v-on="handlers" tabindex="0" :class="{ active: dragging }">…</svg>
+ *
+ * A dial whose printed scale is not linear in the parameter (an attenuator
+ * marked in dB, a compressor's Input knob) should turn at a constant rate
+ * under the pointer, not the value: pass `rotation` with `toRotation(norm)`
+ * and `fromRotation(rot)` (both 0..1) and the drag, wheel and keys move in
+ * rotation space, converting back to the parameter through your mapping.
+ *
+ * @param {object} p A `useParam` handle.
+ * @param {{ sensitivity?: number, fine?: number, wheelStep?: number, discrete?: boolean, rotation?: { toRotation: (norm: number) => number, fromRotation: (rot: number) => number } }} [opts]
+ *   `sensitivity`: pixels for a full sweep (default 200); `fine`: Shift
+ *   multiplier (default 0.2); `wheelStep`: change per notch in rotation
+ *   space (default 0.02, or one step for discrete handles); `discrete`: snap
+ *   drags to the handle's steps (default: the handle's `isDiscrete`);
+ *   `rotation`: the dial's own taper, see above (default: identity).
+ * @returns {{ handlers: Record<string, (e: Event) => void>, dragging: import('vue').Ref<boolean> }}
+ */
+export function useKnobGesture(p, opts = {}) {
+  const sensitivity = opts.sensitivity ?? 200;
+  const fine = opts.fine ?? 0.2;
+  const discrete = opts.discrete ?? p.isDiscrete;
+  const last = Math.max(1, (p.spec?.steps || 2) - 1);
+  const wheelStep = opts.wheelStep ?? (discrete ? 1 / last : 0.02);
+  const toRot = opts.rotation?.toRotation ?? ((n) => n);
+  const fromRot = opts.rotation?.fromRotation ?? ((r) => r);
+  const dragging = ref(false);
+  const clamp = (n) => Math.max(0, Math.min(1, n));
+  const snap = (n) => (discrete ? Math.round(n * last) / last : n);
+  /** Apply a change expressed in rotation space. */
+  const apply = (rot) => p.set(snap(clamp(fromRot(clamp(rot)))));
+  let start = null;
+  let wheelTimer = 0;
+  let wheelOpen = false;
+  const move = (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const dy = start.y - e.clientY;
+    const k = e.shiftKey ? fine : 1;
+    apply(start.rot + (dy / sensitivity) * k);
+  };
+  const up = (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    start = null;
+    dragging.value = false;
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    window.removeEventListener('pointercancel', up);
+    p.end();
+  };
+  const handlers = {
+    pointerdown(e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      start = { id: e.pointerId, y: e.clientY, rot: toRot(p.norm) };
+      dragging.value = true;
+      p.begin();
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
+    },
+    dblclick(e) {
+      e.preventDefault();
+      p.begin();
+      p.reset();
+      p.end();
+    },
+    wheel(e) {
+      e.preventDefault();
+      if (!wheelOpen) {
+        wheelOpen = true;
+        p.begin();
+      }
+      const dir = e.deltaY < 0 ? 1 : -1;
+      const step = wheelStep * (e.shiftKey && !discrete ? fine : 1);
+      apply(toRot(p.norm) + dir * step);
+      clearTimeout(wheelTimer);
+      wheelTimer = setTimeout(() => {
+        wheelOpen = false;
+        p.end();
+      }, 180);
+    },
+    keydown(e) {
+      const step = discrete ? 1 / last : e.shiftKey ? 0.001 : 0.01;
+      const rot = toRot(p.norm);
+      let n = null;
+      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') n = rot + step;
+      else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') n = rot - step;
+      else if (e.key === 'Home') n = 0;
+      else if (e.key === 'End') n = 1;
+      if (n === null) return;
+      e.preventDefault();
+      p.begin();
+      apply(n);
+      p.end();
+    },
+  };
+  return { handlers, dragging };
+}
+
+// ---------------------------------------------------------------------------
+// Window size
+// ---------------------------------------------------------------------------
+
+/**
+ * Live window sizing for a page inside a plug-in window. The host cannot
+ * resize a nih-plug editor on its own, so the page asks: `request(w, h)`
+ * sends a `resize` message (coalesced to one per animation frame, clamped
+ * to `min` / `max`, height derived from `aspect` when given) and the
+ * adapter resizes the host window and the web view to match; the adapter
+ * also remembers the size in the UI store under `storeKey` so the editor
+ * reopens at it. `gripHandlers` turn any element into a drag grip
+ * (`v-on="gripHandlers"`), sending sizes while dragging. `width` and
+ * `height` follow the viewport. `enabled` is false in a browser tab (the
+ * manifest says `standalone`), where the page simply follows the tab.
+ *
+ *   const { enabled, dragging, gripHandlers, request } = useWindowSize({ min: [900, 520], aspect: 1100 / 620 });
+ *
+ * @param {{ min?: [number, number], max?: [number, number], aspect?: number|null, storeKey?: string, enabled?: boolean|null }} [opts]
+ * @returns {{ width: import('vue').Ref<number>, height: import('vue').Ref<number>, enabled: import('vue').ComputedRef<boolean>, dragging: import('vue').Ref<boolean>, request: (w: number, h: number) => [number, number], gripHandlers: Record<string, (e: PointerEvent) => void> }}
+ */
+export function useWindowSize({ min = [480, 320], max = [7680, 4320], aspect = null, storeKey = 'window', enabled = null } = {}) {
+  const c = getClient();
+  const width = ref(window.innerWidth);
+  const height = ref(window.innerHeight);
+  const onViewport = () => {
+    width.value = window.innerWidth;
+    height.value = window.innerHeight;
+  };
+  window.addEventListener('resize', onViewport);
+  if (getCurrentScope()) onScopeDispose(() => window.removeEventListener('resize', onViewport));
+  const isEnabled = computed(() => (enabled != null ? enabled : !manifest.value?.meta?.standalone));
+  const clamp = (w, h) => {
+    w = Math.round(Math.max(min[0], Math.min(max[0], w)));
+    if (aspect) h = w / aspect;
+    h = Math.round(Math.max(min[1], Math.min(max[1], h)));
+    return [w, h];
+  };
+  let next = null;
+  let pending = false;
+  const request = (w, h) => {
+    const size = clamp(w, h);
+    if (!isEnabled.value) return size;
+    next = size;
+    if (!pending) {
+      pending = true;
+      requestAnimationFrame(() => {
+        pending = false;
+        c.send('resize', { width: next[0], height: next[1] });
+      });
+    }
+    return size;
+  };
+  const dragging = ref(false);
+  let start = null;
+  const move = (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    request(start.w + (e.clientX - start.x), start.h + (e.clientY - start.y));
+  };
+  const up = (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const [w, h] = clamp(start.w + (e.clientX - start.x), start.h + (e.clientY - start.y));
+    start = null;
+    dragging.value = false;
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    window.removeEventListener('pointercancel', up);
+    request(w, h);
+    c.store.set(storeKey, { width: w, height: h });
+  };
+  const gripHandlers = {
+    pointerdown(e) {
+      if (e.button !== 0 || !isEnabled.value) return;
+      e.preventDefault();
+      start = { id: e.pointerId, x: e.clientX, y: e.clientY, w: window.innerWidth, h: window.innerHeight };
+      dragging.value = true;
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
+    },
+  };
+  // Fullscreen intent. In a host window the adapter resizes the editor to
+  // the monitor's work area and restores the previous size on the way back
+  // (the page's screen size is sent as a fallback); in a browser tab the
+  // Fullscreen API does the same for the tab.
+  const fullscreen = ref(false);
+  const onFsChange = () => {
+    if (!isEnabled.value) fullscreen.value = !!document.fullscreenElement;
+  };
+  document.addEventListener('fullscreenchange', onFsChange);
+  if (getCurrentScope()) onScopeDispose(() => document.removeEventListener('fullscreenchange', onFsChange));
+  const setFullscreen = (on) => {
+    if (isEnabled.value) {
+      c.send('fullscreen', { on: !!on, width: window.screen.availWidth, height: window.screen.availHeight });
+      fullscreen.value = !!on;
+    } else if (on) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  };
+  const toggleFullscreen = () => setFullscreen(!fullscreen.value);
+  return { width, height, enabled: isEnabled, dragging, request, gripHandlers, fullscreen, setFullscreen, toggleFullscreen };
 }

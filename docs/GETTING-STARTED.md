@@ -511,10 +511,18 @@ cargo build --release --features plugin
   The synth example wires an on-screen keyboard this way.
 * **Undo, redo, A/B**: `useVst3WebStratum().history` in Vue, `new History(client)`
   in vanilla JS.
+* **Your own look**: `useKnobGesture` gives any SVG the drag, wheel and
+  keyboard behaviour of a knob; `useNeedle` gives a meter face you draw the
+  ballistics of a VU meter; `Segmented` and `Toggle` are unstyled controls;
+  `Timeline` and `LinePlot` chart history and curves in your colours. The
+  compressor lab example is built that way.
 * **Presets**: `stateToJson()` and `loadState(values)` snapshot and restore
   every parameter in one frame; keep user presets in `client.store`.
-* **Resize from the page**: `client.send('resize', { width, height })`; the
-  adapter clamps and forwards it to the host.
+* **Resize**: `useWindowSize` and the unstyled `ResizeGrip` from the Vue
+  layer, or `client.send('resize', { width, height })` by hand; the adapter
+  clamps and forwards it to the host, and a resize from the host's side (a
+  frame drag) reaches the page the same way. `toggleFullscreen` asks for
+  the whole monitor.
 * **Several instances**, ports and discovery: [MULTI-INSTANCE.md](MULTI-INSTANCE.md).
 * **Latency**: [PERFORMANCE.md](PERFORMANCE.md), and `tools/bench.mjs`.
 * **The protocol**, if you want a client in another language:

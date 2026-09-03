@@ -61,7 +61,10 @@ vst3-web-stratum removes those three obstacles and nothing else:
   streams; events; a plug-in-persisted key-value store; undo, redo and A/B;
   and dependency-free canvas components (knob, meter, spectrum analyzer, EQ
   curve with draggable nodes, oscilloscope, keyboard, wavetable view, ADSR
-  editor). A Vue 3 layer wraps them in composables and components.
+  editor, history and curve charts). A Vue 3 layer wraps them in composables
+  and components, and adds headless behaviour for looks you draw yourself:
+  needle-meter ballistics, knob gestures, unstyled segmented and toggle
+  controls.
 * **Host-correct behaviour for free.** Edits carry begin / perform / end so
   automation records properly; the nih-plug adapter forwards them on the GUI
   thread, mirrors every host parameter with a 65-point table so the page
@@ -120,7 +123,7 @@ Framework (published as **elyerinfox**):
 |---|---|
 | `crates/vst3-web-stratum` | The bridge and server: wire protocol, parameter store, stream mailboxes, event queues, discovery, the UI store. No plug-in-framework dependency. Ships the browser client in `web/`. |
 | `crates/vst3-web-stratum/web` | `@elyerinfox/vst3-web-stratum`: the browser client (ESM, zero dependencies), the canvas components, undo/redo/A-B, and the optional Vue 3 layer (`/vue`). |
-| `crates/vst3-web-stratum-nih` | The `nih-plug` `Editor` adapter: parameter mirroring, GUI-thread gesture forwarding, the embedded web view, resize, `StoreSlot` persistence. |
+| `crates/vst3-web-stratum-nih` | The `nih-plug` `Editor` adapter: parameter mirroring, GUI-thread gesture forwarding, the embedded web view, resizing from either side, `StoreSlot` persistence. |
 | `crates/vst3-web-stratum-webview` | The OS web view (WebView2 / WKWebView / WebKitGTK via `wry`) as a child of a host window, plus a native UI-thread timer. |
 
 Examples (never published; `publish = false`, npm `private`). I wrote them
@@ -132,6 +135,7 @@ the originals that inspired it:
 |---|---|
 | `examples/noob-q` | **Noob-Q**, a Pro-Q style 24-band EQ: Rust DSP, nih-plug VST3/CLAP effect with side-chain, standalone dev server, Vue + Tailwind SPA. Feature coverage in [docs/FEATURES.md](docs/FEATURES.md). |
 | `examples/noob-wave` | **Noob-Wave**, a wavetable synth: mipmapped tables, unison, sub, SVF filter, two ADSRs, LFO, 16 voices; nih-plug VST3/CLAP instrument with MIDI; standalone with real audio output; Vue + Tailwind SPA with an on-screen keyboard. |
+| `examples/noob-compressorlab` | **Noob CompressorLab**, two classic compressors in one plug-in, chosen per instance with a `model` parameter: an 1176-style FET compressor (feedback detector, ratio buttons with the all-buttons mode, every hardware revision from the blue-stripe A to the LN with its own faceplate, FET and line-amp saturation) and an LA-2A-style optical compressor (T4-cell light and photoresistor model with the two-stage, memory-dependent release, Compress / Limit, sidechain emphasis, tube-stage saturation); needle meters, gain-reduction histories and transfer curves; nih-plug VST3/CLAP effect, standalone, Vue + Tailwind SPA. `research/1176.md` and `research/LA-2A.md` document how the originals work and how they are simulated. |
 
 Plus `docs/` (the guides), `tools/` (the Node scripts) and `.github/workflows/`
 (CI and the docs site).
@@ -152,7 +156,11 @@ cargo run -p noob-wave --bin noob-wave-standalone -- --open
 node tools/bench.mjs 4243
 node tools/play.mjs 4243 60
 
-# what is running (both, plus any plug-in instance in a DAW)
+# the compressor lab: port 4244, visual only like Noob-Q; pick 1176 or LA-2A in the page
+cd examples/noob-compressorlab/web && npm install && npm run build && cd ../../..
+cargo run -p noob-compressorlab --bin noob-compressorlab-standalone -- --open
+
+# what is running (all of them, plus any plug-in instance in a DAW)
 node tools/instances.mjs
 ```
 

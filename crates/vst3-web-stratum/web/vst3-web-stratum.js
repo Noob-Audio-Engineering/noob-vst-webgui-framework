@@ -191,6 +191,10 @@ export const EventKind = {
 /**
  * @typedef {object} ClientOptions
  * @property {boolean} [autoReconnect=true] Reconnect with backoff after a close.
+ * @property {OfflineOptions} [offline] Design-time fallback: if no manifest
+ *   has arrived after `timeoutMs` (or at once with `immediate`), run from a
+ *   local manifest with local parameter values and synthetic frames until
+ *   the real plug-in connects. See {@link mockManifest}.
  * @property {number} [pingIntervalMs=1000] Period of latency probes; `0` disables them.
  * @property {number} [timeoutMs]           `Vst3WebStratumClient.connect()` only: reject if no manifest arrives in time.
  */
@@ -817,6 +821,18 @@ export class Vst3WebStratumClient {
     this._statBytes = 0;
     /** @private */
     this._statT = performance.now();
+    /** @type {boolean} True while running from an offline manifest (no plug-in reached yet). */
+    this.offline = false;
+    /** @private */
+    this._offlineTimer = 0;
+    /** @private */
+    this._offlineFrames = 0;
+    if (this.opts.offline) {
+      const o = this.opts.offline;
+      this._offlineTimer = setTimeout(() => {
+        if (!this.ready) this._goOffline();
+      }, o.immediate ? 0 : (o.timeoutMs ?? 1200));
+    }
     this._connect();
   }
 
@@ -1018,6 +1034,8 @@ export class Vst3WebStratumClient {
    */
   close() {
     this._closed = true;
+    clearTimeout(this._offlineTimer);
+    this._stopOffline();
     if (this._pingTimer) clearInterval(this._pingTimer);
     if (this._ws) this._ws.close();
   }
@@ -1187,6 +1205,7 @@ export class Vst3WebStratumClient {
    * @param {Manifest} m
    */
   _applyManifest(m) {
+    if (this.offline && !this._applyingOffline) this._stopOffline();
     this.manifest = m;
     const params = [];
     const byId = new Map();
@@ -1213,6 +1232,48 @@ export class Vst3WebStratumClient {
     this._sById = sById;
     this.ready = true;
     this._ev.manifest.emit(m, this);
+  }
+
+  /**
+   * Enter offline (design) mode: apply the manifest from `opts.offline`
+   * (given, or built with {@link mockManifest} from its `params` and
+   * `streams`), hydrate an empty store, and start the synthetic frame
+   * generators in `opts.offline.frames`. Reconnecting continues in the
+   * background; the first real manifest ends offline mode.
+   * @private
+   */
+  _goOffline() {
+    const o = this.opts.offline;
+    const m = o.manifest || mockManifest(o);
+    this._applyingOffline = true;
+    this._applyManifest(m);
+    this._applyingOffline = false;
+    this.offline = true;
+    if (!this.store.ready) this.store._hydrate({});
+    if (o.frames) {
+      const t0 = performance.now();
+      let seq = 0;
+      this._offlineFrames = setInterval(() => {
+        const t = (performance.now() - t0) / 1000;
+        for (const [id, gen] of Object.entries(o.frames)) {
+          const s = this._sById.get(id);
+          if (!s) continue;
+          const out = gen(t, s);
+          if (!out) continue;
+          s._receive(out instanceof Float32Array ? out : Float32Array.from(out), seq, Math.round(t * 1e9));
+        }
+        seq++;
+      }, 1000 / (o.frameRate ?? 30));
+    }
+    this._ev.message.emit('offline', { name: m.name });
+  }
+
+  /** Leave offline mode: stop the frame generators. @private */
+  _stopOffline() {
+    if (!this.offline) return;
+    this.offline = false;
+    clearInterval(this._offlineFrames);
+    this._offlineFrames = 0;
   }
 
   /**
@@ -1670,6 +1731,74 @@ export class Store {
     else this._cache.set(key, value);
     this._ev.emit(key, value);
   }
+}
+
+/**
+ * @typedef {object} OfflineOptions
+ * @property {Manifest} [manifest] A complete manifest to use; otherwise one is built from `params` / `streams`.
+ * @property {string} [name='offline'] Plug-in name for the built manifest.
+ * @property {object} [meta] Manifest `meta` (e.g. `{ sample_rate: 48000 }`).
+ * @property {Array<object>} [params] Minimal specs: `{ id, name?, unit?, group?, min = 0, max = 1, default = min, taper = 'linear'|'log'|'skew', skew?, steps?, labels?, toggle?, automatable? }`.
+ * @property {Array<object>} [streams] Minimal specs: `{ id, name?, kind = 'raw', capacity = 1, channels = 1, meta?, sticky? }`.
+ * @property {Record<string, (tSeconds: number, stream: Stream) => (ArrayLike<number>|null)>} [frames] Synthetic frame generators by stream id, called `frameRate` times a second.
+ * @property {number} [frameRate=30]
+ * @property {number} [timeoutMs=1200] How long to wait for a real manifest before falling back.
+ * @property {boolean} [immediate=false] Fall back at once (and still connect for real in the background).
+ */
+
+/**
+ * Build a manifest for offline (design-time) use from minimal parameter and
+ * stream specs, so a page can be developed and styled before the plug-in
+ * exists or without running it: `configureClient({ offline: { params, streams,
+ * frames } })` in Vue, or `new Vst3WebStratumClient(null, { offline })`.
+ * Tapers are the same as the server's (`linear`, `log`, `skew`); the
+ * 65-point `table` and `default_norm` are derived. Ids must match what the
+ * plug-in will publish, or the page will not bind once it goes live.
+ *
+ * @param {OfflineOptions} [spec]
+ * @returns {Manifest}
+ */
+export function mockManifest({ name = 'offline', meta = {}, params = [], streams = [] } = {}) {
+  const clamp01 = (n) => Math.max(0, Math.min(1, n));
+  const outParams = params.map((p, index) => {
+    const min = p.min ?? 0;
+    const max = p.max ?? 1;
+    const taper = p.taper || 'linear';
+    const skew = p.skew ?? 1;
+    const steps = p.steps ?? (p.labels ? p.labels.length : p.toggle ? 2 : 0);
+    const dflt = p.default ?? min;
+    const lo = Math.max(min, 1e-9);
+    const toPlain = (n) => (taper === 'log' ? lo * Math.pow(max / lo, n) : taper === 'skew' ? min + (max - min) * Math.pow(n, 1 / skew) : min + (max - min) * n);
+    const toNorm = (v) => (taper === 'log' ? Math.log(v / lo) / Math.log(max / lo) : taper === 'skew' ? Math.pow((v - min) / (max - min), skew) : (v - min) / (max - min));
+    return {
+      index,
+      id: p.id,
+      name: p.name ?? p.id,
+      unit: p.unit ?? '',
+      group: p.group ?? '',
+      min,
+      max,
+      default: dflt,
+      default_norm: clamp01(toNorm(dflt)),
+      taper,
+      skew: taper === 'skew' ? skew : undefined,
+      steps,
+      labels: p.labels ?? [],
+      automatable: p.automatable ?? true,
+      table: Array.from({ length: 65 }, (_, i) => toPlain(i / 64)),
+    };
+  });
+  const outStreams = streams.map((s, index) => ({
+    index,
+    id: s.id,
+    name: s.name ?? s.id,
+    kind: s.kind ?? 'raw',
+    capacity: s.capacity ?? 1,
+    channels: s.channels ?? 1,
+    meta: s.meta ?? {},
+    sticky: !!s.sticky,
+  }));
+  return { t: 'manifest', name, protocol: PROTOCOL_VERSION, meta, params: outParams, streams: outStreams };
 }
 
 /**

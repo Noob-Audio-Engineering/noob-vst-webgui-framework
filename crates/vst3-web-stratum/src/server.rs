@@ -695,7 +695,7 @@ async fn instances_handler(State(st): State<Arc<AppState>>, uri: axum::http::Uri
         .unwrap_or(false);
     let name = st.instance.name.clone();
     let list = tokio::task::spawn_blocking(move || {
-        let mut live = discovery::list_live(Duration::from_millis(250));
+        let mut live = discovery::list_live(Duration::from_millis(500));
         if !all {
             live.retain(|i| i.name == name);
         }

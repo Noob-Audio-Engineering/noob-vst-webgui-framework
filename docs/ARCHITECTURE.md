@@ -200,7 +200,10 @@ mirrored parameter values from the host, starts the server lazily, installs
 the UI timer, and embeds the web view in the host's window (falling back to
 the system browser when there is no web view). The page can request a window
 resize with a `resize` message, which the adapter clamps and forwards to the
-host. Parameter changes from the host arrive through the `Editor` callbacks
+host, or ask for the monitor's work area with `fullscreen`; a resize by the
+host comes back the other way through `Editor::set_size` and the web view
+follows on the next timer tick. Parameter changes from the host arrive
+through the `Editor` callbacks
 and are pushed into the bridge. A `StoreSlot` in the `Params` struct
 serializes the UI store into the plug-in state and restores it, even if the
 host restores state before the editor exists.

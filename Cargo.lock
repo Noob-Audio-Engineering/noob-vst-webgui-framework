@@ -1782,7 +1782,7 @@ dependencies = [
 [[package]]
 name = "nih_plug"
 version = "0.0.0"
-source = "git+https://github.com/robbert-vdh/nih-plug.git#f36931f7af4646065488a9845d8f8c2f95252c23"
+source = "git+https://github.com/elyerinfox/nih-plug.git?branch=host-resize#7b4207e15499a662e968409c598cafa949e368f0"
 dependencies = [
  "anyhow",
  "anymap3",
@@ -1812,7 +1812,7 @@ dependencies = [
 [[package]]
 name = "nih_plug_derive"
 version = "0.1.0"
-source = "git+https://github.com/robbert-vdh/nih-plug.git#f36931f7af4646065488a9845d8f8c2f95252c23"
+source = "git+https://github.com/elyerinfox/nih-plug.git?branch=host-resize#7b4207e15499a662e968409c598cafa949e368f0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1833,6 +1833,19 @@ checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
 dependencies = [
  "memchr",
  "minimal-lexical",
+]
+
+[[package]]
+name = "noob-compressorlab"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "include_dir",
+ "log",
+ "nih_plug",
+ "serde_json",
+ "vst3-web-stratum",
+ "vst3-web-stratum-nih",
 ]
 
 [[package]]
@@ -3315,6 +3328,7 @@ version = "0.1.0"
 dependencies = [
  "log",
  "nih_plug",
+ "serde_json",
  "vst3-web-stratum",
  "vst3-web-stratum-webview",
 ]

@@ -6,6 +6,35 @@ the workspace version in `Cargo.toml`.
 
 ## [Unreleased]
 
+### Added
+
+- A third example, Noob CompressorLab: two classic compressors in one
+  plug-in, chosen per instance with a `model` parameter. The 1176 side is a
+  FET compressor (feedback detector, ratio buttons with the all-buttons
+  mode, every hardware revision from A to LN with its own circuit constants
+  and faceplate look); the LA-2A side is an optical compressor (T4 cell
+  model with the two-stage memory-dependent release, Compress / Limit,
+  sidechain emphasis). Sourced research for both under `research/`, DSP
+  tests, plug-in, standalone and one Vue + Tailwind SPA with both
+  faceplates.
+- Framework: `NeedleModel` (needle-meter ballistics and scale maths, no
+  drawing), `Timeline` (scrolling history chart) and `LinePlot` (XY curve
+  chart) canvas components; Vue `Timeline`, `LinePlot`, unstyled `Segmented`
+  and `Toggle` controls; `useStreamValue`, `useStreamFrame` and `useNeedle`
+  composables.
+- Framework: live window resizing and fullscreen intent for plug-in pages
+  (`useWindowSize`, the unstyled `ResizeGrip`, the `fullscreen` message and
+  the `window` store key; the adapter applies resize requests without
+  blocking behind other messages, remembers the size with the plug-in state
+  and reopens at it), host-driven resizing (a frame drag in the host reaches
+  the page: the adapter implements `Editor::can_resize`,
+  `check_size_constraint` and `set_size`, which upstream nih-plug lacks, so
+  the workspace builds against a patched fork through `[patch]`), an
+  offline design mode for developing a page before
+  its plug-in exists (`configureClient({ offline })`, `mockManifest`), and
+  Vite configs that keep the linked framework out of the dependency
+  pre-bundle so framework edits hot-reload.
+
 ## [0.1.0] - 2026-09-03
 
 First complete version.
