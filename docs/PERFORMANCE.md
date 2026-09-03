@@ -1,6 +1,6 @@
 # Performance
 
-The headline requirement of vst3-web-stratum is control latency: a knob drag in the
+The headline requirement of noob-vst-webgui-framework is control latency: a knob drag in the
 page must reach the audio thread, and the echo must come back, fast enough
 that nothing feels like a web page. This document gives the numbers, how
 they were measured, where the time goes, and the knobs that trade latency,
@@ -59,7 +59,7 @@ are well under a microsecond each. Run the bench a few times and look at the
 median; the maxima are dominated by the operating system's scheduler.
 
 To measure in a real plug-in window, the page's own `client.stats.echoAvgMs`
-and `rttAvgMs` show the same two figures, as the example UIs do in their
+and `rttAvgMs` show the same two figures, as the plug-ins' pages do in their
 top-right corner.
 
 ## Where the time goes
@@ -77,7 +77,7 @@ For one edit and its echo:
 
 The audio thread is not on this path at all. It reads the new value with an
 atomic load on its next block; that delay is the host's block size and
-belongs to the host, not to vst3-web-stratum.
+belongs to the host, not to noob-vst-webgui-framework.
 
 ## Tuning
 
@@ -87,11 +87,11 @@ belongs to the host, not to vst3-web-stratum.
 |---|---|---|
 | `wake(WakeMode::Unpark)` | Unpark | The audio thread unparks the pump after publishing. Lowest latency. `WakeMode::Poll` never wakes from the audio thread; the pump runs on `poll_interval` only. Use it if your real-time policy forbids any syscall from the audio callback. |
 | `poll_interval` | 1 ms | Upper bound on how long a change waits when nothing wakes the pump. Lower it under `Poll`; leave it under `Unpark`. |
-| `echo_edits` | on in the examples | Echo a client's own edits back to it (needed for the latency display and for a page that shows the value the plug-in actually stored). Costs one small frame per edit; turn it off for many-client setups. |
+| `echo_edits` | on in the plug-ins | Echo a client's own edits back to it (needed for the latency display and for a page that shows the value the plug-in actually stored). Costs one small frame per edit; turn it off for many-client setups. |
 | `send_queue` | 64 frames | Per-client outbound queue. Larger tolerates a slower client before a resync is forced; smaller bounds memory and staleness. |
 | `max_message_size` | 1 MiB | Largest inbound frame accepted. Only the store can approach it. |
 
-### Bridge (`Vst3WebStratumBuilder`)
+### Bridge (`NoobVstWebguiFrameworkBuilder`)
 
 | Option | Effect |
 |---|---|
@@ -118,7 +118,7 @@ belongs to the host, not to vst3-web-stratum.
 
 * Draw from `requestAnimationFrame`, not from every frame event; keep the
   latest frame and render it once per display refresh. The components in
-  `@elyerinfox/vst3-web-stratum/components` do this.
+  `@noob-audio-engineering/noob-vst-webgui-framework/components` do this.
 * Do not copy stream data. The `Float32Array` you receive is a view over the
   socket buffer for the duration of the callback; read from it or keep a
   reference to the whole frame if you need it later.
@@ -142,7 +142,7 @@ belongs to the host, not to vst3-web-stratum.
   DSP that produced it and allocates on both ends.
 * A fixed port with several instances. See
   [MULTI-INSTANCE.md](MULTI-INSTANCE.md).
-* Sleeping in the audio callback to "give the UI time". vst3-web-stratum never needs
+* Sleeping in the audio callback to "give the UI time". noob-vst-webgui-framework never needs
   it; every hand-off is non-blocking.
 * Waiting for an echo before drawing the knob. Draw the local value at once;
   the echo is for statistics and for reconciling with the host.
@@ -150,6 +150,7 @@ belongs to the host, not to vst3-web-stratum.
 ## Reproducing
 
 ```sh
+# in the noob-q repository (https://github.com/Noob-Audio-Engineering/noob-q)
 cargo build --release -p noob-q --bin noob-q-standalone
 ./target/release/noob-q-standalone     # port 4242
 node tools/bench.mjs 4242

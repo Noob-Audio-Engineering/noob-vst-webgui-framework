@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * bench.mjs — headless latency / throughput benchmark for a running vst3-web-stratum
+ * bench.mjs — headless latency / throughput benchmark for a running noob-vst-webgui-framework
  * server (Node 22+, uses the built-in WebSocket).
  *
  *   node tools/bench.mjs <port> [--pings 2000] [--edits 2000] [--seconds 3]

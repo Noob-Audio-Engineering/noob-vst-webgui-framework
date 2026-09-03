@@ -1,0 +1,39 @@
+{
+  "name": "@noob-audio-engineering/noob-vst-webgui-framework",
+  "version": "0.1.0",
+  "description": "Browser client for a noob-vst-webgui-framework-bridged audio plugin: binary WebSocket protocol, live parameters, telemetry streams, events, and dependency-free knob / meter / spectrum / EQ-curve / scope / keyboard / wavetable / envelope components, plus an optional Vue 3 layer.",
+  "type": "module",
+  "author": "Ely Erin Fox",
+  "license": "MIT OR Apache-2.0",
+  "main": "./noob-vst-webgui-framework.js",
+  "exports": {
+    ".": "./noob-vst-webgui-framework.js",
+    "./components": "./components/index.js",
+    "./components/*": "./components/*.js",
+    "./vue": "./vue/index.js",
+    "./vue/*": "./vue/*"
+  },
+  "files": [
+    "noob-vst-webgui-framework.js",
+    "components/",
+    "vue/"
+  ],
+  "sideEffects": false,
+  "peerDependencies": {
+    "vue": ">=3.4"
+  },
+  "peerDependenciesMeta": {
+    "vue": {
+      "optional": true
+    }
+  },
+  "homepage": "https://github.com/Noob-Audio-Engineering/noob-vst-webgui-framework#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Noob-Audio-Engineering/noob-vst-webgui-framework.git",
+    "directory": "crates/noob-vst-webgui-framework/web"
+  },
+  "bugs": {
+    "url": "https://github.com/Noob-Audio-Engineering/noob-vst-webgui-framework/issues"
+  }
+}

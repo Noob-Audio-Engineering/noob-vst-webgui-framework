@@ -1,0 +1,41 @@
+{
+  "name": "@noob-audio-engineering/noob-vst-webgui-framework",
+  "version": "0.1.0",
+  "description": "Browser client for a noob-vst-webgui-framework-bridged audio plug-in, installable straight from this repository (npm install github:Noob-Audio-Engineering/noob-vst-webgui-framework). The package itself lives in crates/noob-vst-webgui-framework/web; this manifest only re-exports it from the repository root.",
+  "type": "module",
+  "author": "Ely Erin Fox",
+  "license": "MIT OR Apache-2.0",
+  "main": "./crates/noob-vst-webgui-framework/web/noob-vst-webgui-framework.js",
+  "exports": {
+    ".": "./crates/noob-vst-webgui-framework/web/noob-vst-webgui-framework.js",
+    "./components": "./crates/noob-vst-webgui-framework/web/components/index.js",
+    "./components/*": "./crates/noob-vst-webgui-framework/web/components/*.js",
+    "./vue": "./crates/noob-vst-webgui-framework/web/vue/index.js",
+    "./vue/*": "./crates/noob-vst-webgui-framework/web/vue/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "crates/noob-vst-webgui-framework/web/noob-vst-webgui-framework.js",
+    "crates/noob-vst-webgui-framework/web/components/",
+    "crates/noob-vst-webgui-framework/web/vue/",
+    "crates/noob-vst-webgui-framework/web/README.md",
+    "crates/noob-vst-webgui-framework/web/components/README.md"
+  ],
+  "sideEffects": false,
+  "peerDependencies": {
+    "vue": ">=3.4"
+  },
+  "peerDependenciesMeta": {
+    "vue": {
+      "optional": true
+    }
+  },
+  "homepage": "https://github.com/Noob-Audio-Engineering/noob-vst-webgui-framework#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Noob-Audio-Engineering/noob-vst-webgui-framework.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Noob-Audio-Engineering/noob-vst-webgui-framework/issues"
+  }
+}

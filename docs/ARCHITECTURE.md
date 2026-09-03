@@ -1,6 +1,6 @@
 # Architecture
 
-vst3-web-stratum lets an audio plug-in render its user interface in a browser engine
+noob-vst-webgui-framework lets an audio plug-in render its user interface in a browser engine
 without giving up the latency of a native UI. This document explains the
 pieces, the threads, the data model, the real-time rules, and the reasoning
 behind the main decisions. Read [GETTING-STARTED.md](GETTING-STARTED.md)
@@ -20,7 +20,7 @@ it works.
 * Only the operating system's web view is used (WebView2, WKWebView,
   WebKitGTK). No browser engine is bundled.
 * Everything generic lives in the framework crates and the browser library;
-  everything product specific lives in the example crates.
+  everything product specific lives in the plug-ins, each in its own repository.
 
 ## The pieces
 
@@ -29,26 +29,26 @@ flowchart LR
   subgraph proc["plug-in process"]
     direction LR
     dsp["your DSP<br/>(audio thread)"]
-    core["vst3-web-stratum<br/>bridge + server"]
-    nih["vst3-web-stratum-nih<br/>host adapter"]
-    wv["vst3-web-stratum-webview<br/>(wry)"]
+    core["noob-vst-webgui-framework<br/>bridge + server"]
+    nih["noob-vst-webgui-framework-nih<br/>host adapter"]
+    wv["noob-vst-webgui-framework-webview<br/>(wry)"]
     host["host / DAW"]
     dsp -- "AudioHandle" --> core
     host -- "Editor callbacks" --> nih
-    nih -- "Vst3WebStratum" --> core
+    nih -- "NoobVstWebguiFramework" --> core
     nih -- "embeds" --> wv
   end
-  core -- "ws://127.0.0.1:port" --> page["OS web view · browser tab · script<br/>@elyerinfox/vst3-web-stratum (+ /components, /vue)"]
+  core -- "ws://127.0.0.1:port" --> page["OS web view · browser tab · script<br/>@noob-audio-engineering/noob-vst-webgui-framework (+ /components, /vue)"]
   wv -. "shows" .-> page
 ```
 
 | Piece | Language | Role |
 |---|---|---|
-| `crates/vst3-web-stratum` | Rust | The bridge (`Vst3WebStratum`, `AudioHandle`), the parameter store, stream mailboxes, the wire codec, the WebSocket/HTTP server, discovery, the UI store. Feature `server` (default) pulls in tokio and axum; without it the crate is the protocol and the real-time queues only. |
-| `crates/vst3-web-stratum-nih` | Rust | An `nih_plug::Editor` whose window is the OS web view showing the page the plug-in serves. Mirrors nih-plug parameters, forwards gestures on the GUI thread, persists the UI store in plug-in state. |
-| `crates/vst3-web-stratum-webview` | Rust | A thin wrapper over `wry`: embed a web view as a child of a host-provided window handle, plus a native UI-thread timer. |
-| `crates/vst3-web-stratum/web/` (`@elyerinfox/vst3-web-stratum`) | JavaScript | The browser client: connect, decode binary frames, parameter handles with tapers and gestures, streams, events, the store, undo history. `@elyerinfox/vst3-web-stratum/components` are dependency-free canvas widgets; `@elyerinfox/vst3-web-stratum/vue` is a Vue 3 layer. |
-| `examples/noob-q`, `examples/noob-wave` | Rust + Vue | Complete example products: a 24-band EQ and a wavetable synth, each with DSP, a plug-in, a standalone dev binary and a Vue + Tailwind SPA. |
+| `crates/noob-vst-webgui-framework` | Rust | The bridge (`NoobVstWebguiFramework`, `AudioHandle`), the parameter store, stream mailboxes, the wire codec, the WebSocket/HTTP server, discovery, the UI store. Feature `server` (default) pulls in tokio and axum; without it the crate is the protocol and the real-time queues only. |
+| `crates/noob-vst-webgui-framework-nih` | Rust | An `nih_plug::Editor` whose window is the OS web view showing the page the plug-in serves. Mirrors nih-plug parameters, forwards gestures on the GUI thread, persists the UI store in plug-in state. |
+| `crates/noob-vst-webgui-framework-webview` | Rust | A thin wrapper over `wry`: embed a web view as a child of a host-provided window handle, plus a native UI-thread timer. |
+| `crates/noob-vst-webgui-framework/web/` (`@noob-audio-engineering/noob-vst-webgui-framework`) | JavaScript | The browser client: connect, decode binary frames, parameter handles with tapers and gestures, streams, events, the store, undo history. `@noob-audio-engineering/noob-vst-webgui-framework/components` are dependency-free canvas widgets; `@noob-audio-engineering/noob-vst-webgui-framework/vue` is a Vue 3 layer. |
+| [noob-q](https://github.com/Noob-Audio-Engineering/noob-q), [noob-wave](https://github.com/Noob-Audio-Engineering/noob-wave), [noob-compressorlab](https://github.com/Noob-Audio-Engineering/noob-compressorlab) | Rust + Vue | The free plug-ins built on the framework, in their own repositories: a 24-band EQ, a wavetable synth and a two-model compressor, each with DSP, a plug-in, a standalone dev binary and a Vue + Tailwind SPA. |
 | `tools/` | Node | Latency bench, parameter setter, note player, instance lister. |
 
 ## Data model
@@ -101,7 +101,7 @@ other clients.
 
 Events are small fixed-size records (kind, channel, two bytes, a float, a
 sample offset) carried in both directions in `Events` and `EventsOut` frames.
-The synth example uses them for notes from the on-screen keyboard and for
+Noob-Wave uses them for notes from the on-screen keyboard and for
 lighting keys when the host plays. They are queued in lock-free queues and
 never dropped silently: a full queue is reported to the sender.
 
@@ -140,7 +140,7 @@ another. Every one of these is wait-free or lock-free and none allocates.
 After publishing it calls `wake`, which is one atomic swap plus an `unpark`
 of the pump thread only when the pump was actually asleep.
 
-**Pump thread** (`vst3-web-stratum-pump`). Wakes on `unpark` or after the poll
+**Pump thread** (`noob-vst-webgui-framework-pump`). Wakes on `unpark` or after the poll
 interval, whichever comes first. It drains the parameter change queue and
 coalesces it into one `ParamValues` frame per client (honouring echo flags
 so a client does not get its own edit back unless it asked to), reads every
@@ -151,7 +151,7 @@ thread through bounded channels with `try_send`; a client whose queue is
 full has its parameter frame dropped and is marked for a full resync on the
 next cycle, so it can never drift.
 
-**Net thread** (`vst3-web-stratum-net`). A tokio current-thread runtime running axum
+**Net thread** (`noob-vst-webgui-framework-net`). A tokio current-thread runtime running axum
 with one task per WebSocket client. Inbound frames are decoded here: edits
 are applied to the parameter store at once (the audio thread sees them on
 its next block) and queued for the host; events go straight into the
@@ -159,7 +159,7 @@ audio-bound queue; `store.*` and `resize` topics are handled here or queued
 for the host. TCP_NODELAY is set on every socket, because Nagle alone would
 cost up to 40 ms per 12-byte edit.
 
-**Host / GUI thread**. Not a vst3-web-stratum thread, but the place where edits reach
+**Host / GUI thread**. Not a noob-vst-webgui-framework thread, but the place where edits reach
 the DAW. The nih-plug adapter drains the edit queue from a native UI timer
 while the editor window is open, because plug-in APIs require parameter
 changes to originate on the GUI thread. When there is no such timer, or the
@@ -173,14 +173,14 @@ directly from the net thread instead.
 | `AudioHandle::param`, `param_norm`, `set_param_norm` | audio | atomic load/store, wait-free |
 | `AudioHandle::publish`, `publish_slice` | audio | triple buffer, wait-free, no allocation |
 | `AudioHandle::drain_events`, `send_event` | audio | lock-free queue, bounded |
-| `Vst3WebStratum::set_param`, `sync_all_params` | any | atomic store plus a bounded push to the pump; drops are counted |
-| `Vst3WebStratum::drain_edits`, `poll_message` | host / GUI | bounded queues, non-blocking |
-| `Vst3WebStratum::store_*` | any | takes a mutex; never called from the audio thread |
+| `NoobVstWebguiFramework::set_param`, `sync_all_params` | any | atomic store plus a bounded push to the pump; drops are counted |
+| `NoobVstWebguiFramework::drain_edits`, `poll_message` | host / GUI | bounded queues, non-blocking |
+| `NoobVstWebguiFramework::store_*` | any | takes a mutex; never called from the audio thread |
 | `serve`, `ServerHandle::shutdown` | any non-audio | spawns / joins threads |
 
 ## The client
 
-`Vst3WebStratumClient` opens the WebSocket, negotiates with `Hello`, receives the
+`NoobVstWebguiFrameworkClient` opens the WebSocket, negotiates with `Hello`, receives the
 manifest, a snapshot of every parameter, the sticky frames and the store,
 and then decodes frames as they arrive. Stream payloads are exposed as
 `Float32Array` views over the received buffer at a 4-byte aligned offset, so
@@ -194,7 +194,7 @@ frames per second and bandwidth for display.
 
 ## Host integration
 
-`Vst3WebStratumEditor` (in `vst3-web-stratum-nih`) is created once per plug-in instance and
+`NoobVstWebguiFrameworkEditor` (in `noob-vst-webgui-framework-nih`) is created once per plug-in instance and
 handed to nih-plug every time it asks for an editor. On `spawn` it syncs the
 mirrored parameter values from the host, starts the server lazily, installs
 the UI timer, and embeds the web view in the host's window (falling back to
@@ -225,7 +225,7 @@ An edit from a knob drag to the audio thread and back to the page:
 2. Loopback TCP with `TCP_NODELAY`: 10 to 30 µs per direction on Windows.
 3. Net thread decode and atomic store: under a microsecond. The audio thread
    sees the value on its next block; that wait is the host's block size, not
-   vst3-web-stratum's.
+   noob-vst-webgui-framework's.
 4. Echo back (when enabled): the pump wakes on the change, coalesces and
    sends one `ParamValues` frame.
 
@@ -315,11 +315,11 @@ handshake code.
 ## Limitations and future work
 
 * One web view per editor window; the page cannot open native dialogs
-  through vst3-web-stratum (use the host or the browser's own).
+  through noob-vst-webgui-framework (use the host or the browser's own).
 * The store is a single JSON object with size caps, not a database.
 * The plug-ins compile with the `plugin` feature and pass headless checks but
   have not yet been run inside a DAW.
 * MIDI Learn and other host-side features are the host's business; the
-  examples show them as disabled.
+  plug-ins show them as disabled.
 * Linux and macOS builds of the web view crate are written against the
   `wry` API but have only been exercised on Windows.

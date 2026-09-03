@@ -1,11 +1,11 @@
-# vst3-web-stratum wire format (protocol 1)
+# noob-vst-webgui-framework wire format (protocol 1)
 
-This is the complete reference for what travels between a vst3-web-stratum server
-(the plug-in side, `vst3-web-stratum`) and its clients (`@elyerinfox/vst3-web-stratum`, or any
+This is the complete reference for what travels between a noob-vst-webgui-framework server
+(the plug-in side, `noob-vst-webgui-framework`) and its clients (`@noob-audio-engineering/noob-vst-webgui-framework`, or any
 WebSocket client). The Rust side of every frame is in
-`crates/vst3-web-stratum/src/wire.rs`; the browser side is in `crates/vst3-web-stratum/web/vst3-web-stratum.js`.
+`crates/noob-vst-webgui-framework/src/wire.rs`; the browser side is in `crates/noob-vst-webgui-framework/web/noob-vst-webgui-framework.js`.
 The two are kept in lockstep by hand; the integration tests in
-`crates/vst3-web-stratum/tests/server.rs` exercise every frame kind end to end.
+`crates/noob-vst-webgui-framework/tests/server.rs` exercise every frame kind end to end.
 
 ## Overview
 
@@ -153,7 +153,7 @@ each, starting at offset 4. Both directions share the layout:
 Client → server events land in a lock-free queue the audio thread drains
 once per block (`AudioHandle::drain_events`); a full queue (1024 events)
 drops the event. Server → client events come from `AudioHandle::send_event`
-or `Vst3WebStratum::push_event`, are batched (up to 512 per frame) and delivered in
+or `NoobVstWebguiFramework::push_event`, are batched (up to 512 per frame) and delivered in
 order. If a client's outbound queue is full the events frame is dropped for
 that client and a full parameter snapshot is scheduled instead; a UI that
 tracks transient state from events (lit keys) should treat a snapshot as a
@@ -283,9 +283,9 @@ Top level:
 
 | field | type | meaning |
 |---|---|---|
-| `name` | string | the bridge name (`Vst3WebStratum::builder(name)`) |
+| `name` | string | the bridge name (`NoobVstWebguiFramework::builder(name)`) |
 | `protocol` | integer | wire protocol version, same as in Hello |
-| `meta` | any JSON | free-form, set with `Vst3WebStratumBuilder::meta`; the examples put `vendor`, `version`, `sample_rate`, layout hints and a `standalone` flag there |
+| `meta` | any JSON | free-form, set with `NoobVstWebguiFrameworkBuilder::meta`; the plug-ins put `vendor`, `version`, `sample_rate`, layout hints and a `standalone` flag there |
 | `params` | array | one entry per parameter, in index order |
 | `streams` | array | one entry per stream, in index order |
 
@@ -337,9 +337,9 @@ Ad-hoc messages, either direction:
 | `topic` | string | routing key; the plug-in and the page agree on the set |
 | `data` | any JSON | payload; `null` when absent |
 
-Server → client messages are broadcast to every client (`Vst3WebStratum::send_json`)
+Server → client messages are broadcast to every client (`NoobVstWebguiFramework::send_json`)
 or, for store changes, to every client but the originator. Client → server
-messages are queued for the plug-in (`Vst3WebStratum::poll_message`, which also
+messages are queued for the plug-in (`NoobVstWebguiFramework::poll_message`, which also
 reports the sending client's id); the queue holds 1024 messages and drops
 the oldest when full. Text that is not valid JSON, or has no `"t": "msg"`,
 is logged and ignored.
@@ -370,7 +370,7 @@ In the browser: `client.store.get(key, dflt)`, `client.store.set(key, value)`,
 `client.store.on(key | '*', fn)`, `client.store.ready`. With Vue,
 `useStore()` and `useStoredRef(key, dflt)`.
 
-### Conventions used by the adapter and the examples
+### Conventions used by the adapter and the plug-ins
 
 These are ordinary messages, not part of the protocol; they are listed so
 a new plug-in can reuse them.
@@ -380,8 +380,8 @@ a new plug-in can reuse them.
 | `resize` | client → server | `{ "width": w, "height": h }` | the nih-plug adapter: asks the host to resize the editor and resizes the web view; standalones ignore it |
 | `fullscreen` | client → server | `{ "on": bool, "width"?, "height"? }` | the nih-plug adapter: on, resizes the editor to the monitor's work area (the page's `screen.availWidth/Height` is the fallback) and keeps the previous size; off, restores it. Standalones ignore it (a tab uses the Fullscreen API itself) |
 | `store` key `window` | written by the adapter | `{ "width": w, "height": h }` | the last size the page asked for with `resize` or the host set by resizing the window; the editor reopens at it (not written for fullscreen sizes) |
-| `reset` | client → server | none | the example standalones: every parameter back to its default |
-| `status` | server → client, about once a second | free-form (`clients`, `blocks`, `edits`, `dropped`, `sample_rate`, latency) | the example pages show it in their status line |
+| `reset` | client → server | none | the plug-ins' standalones: every parameter back to its default |
+| `status` | server → client, about once a second | free-form (`clients`, `blocks`, `edits`, `dropped`, `sample_rate`, latency) | the plug-ins' pages show it in their status line |
 | `sample_rate` | server → client | `{ "sample_rate": hz }` | the Vue layer patches `manifest.meta.sample_rate` |
 
 ## HTTP endpoints
@@ -397,12 +397,12 @@ Besides `/ws`:
   purpose. Each server writes `<pid>-<port>.json` to the discovery directory
   on start and removes it on stop; records whose server does not answer
   `/instance` within 500 ms, or answers with another pid, are deleted. The
-  directory is `%LOCALAPPDATA%\vst3-web-stratum\instances` on Windows,
-  `~/Library/Application Support/vst3-web-stratum/instances` on macOS and
-  `$XDG_RUNTIME_DIR/vst3-web-stratum/instances` (else `~/.local/state/vst3-web-stratum/instances`)
+  directory is `%LOCALAPPDATA%\noob-vst-webgui-framework\instances` on Windows,
+  `~/Library/Application Support/noob-vst-webgui-framework/instances` on macOS and
+  `$XDG_RUNTIME_DIR/noob-vst-webgui-framework/instances` (else `~/.local/state/noob-vst-webgui-framework/instances`)
   on Linux. `node tools/instances.mjs` does the same scan from the shell.
-* `GET /vst3-web-stratum/<file>` → the browser library baked into the server
-  (`vst3-web-stratum.js`, `components/*.js`), so a page can `import` it without a
+* `GET /noob-vst-webgui-framework/<file>` → the browser library baked into the server
+  (`noob-vst-webgui-framework.js`, `components/*.js`), so a page can `import` it without a
   bundler.
 * anything else → the configured assets (`Assets::Dir`, `Assets::Embedded`
   or `Assets::Lookup`). `/` and any path ending in `/` map to `index.html`;
@@ -465,8 +465,8 @@ microseconds of arriving.
 
 | what | value | where |
 |---|---|---|
-| plug-in → UI change queue | 4096 entries | `Vst3WebStratumBuilder::ui_queue` |
-| UI → host edit queue | 1024 entries | `Vst3WebStratumBuilder::host_queue` |
+| plug-in → UI change queue | 4096 entries | `NoobVstWebguiFrameworkBuilder::ui_queue` |
+| UI → host edit queue | 1024 entries | `NoobVstWebguiFrameworkBuilder::host_queue` |
 | event queues, each direction | 1024 events | fixed |
 | inbound message queue | 1024 messages, oldest dropped | fixed |
 | per-client outbound queue | 256 messages | `ServerConfig::send_queue` |

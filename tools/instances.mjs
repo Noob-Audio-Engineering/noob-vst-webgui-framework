@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// List the vst3-web-stratum instances running on this machine.
+// List the noob-vst-webgui-framework instances running on this machine.
 //
 //   node tools/instances.mjs                 # scan the discovery directory, probe each
 //   node tools/instances.mjs --name noob-q   # only instances of one plug-in
 //   node tools/instances.mjs 4242            # ask a running server: instances of ITS plug-in
-//   node tools/instances.mjs 4242 --all      # ... or every vst3-web-stratum instance it can see
+//   node tools/instances.mjs 4242 --all      # ... or every noob-vst-webgui-framework instance it can see
 //   node tools/instances.mjs --json          # machine-readable
 //
-// Discovery files live in %LOCALAPPDATA%\vst3-web-stratum\instances (Windows),
-// ~/Library/Application Support/vst3-web-stratum/instances (macOS) or
-// $XDG_RUNTIME_DIR/vst3-web-stratum/instances (Linux). Each server writes one on start
+// Discovery files live in %LOCALAPPDATA%\noob-vst-webgui-framework\instances (Windows),
+// ~/Library/Application Support/noob-vst-webgui-framework/instances (macOS) or
+// $XDG_RUNTIME_DIR/noob-vst-webgui-framework/instances (Linux). Each server writes one on start
 // and removes it on a clean stop; stale files (crashes) are dropped here when
 // the probe fails.
 
@@ -26,13 +26,13 @@ const onlyName = nameIx >= 0 ? args[nameIx + 1] : null;
 
 function discoveryDir() {
   if (process.platform === 'win32') {
-    return join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'vst3-web-stratum', 'instances');
+    return join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'noob-vst-webgui-framework', 'instances');
   }
   if (process.platform === 'darwin') {
-    return join(homedir(), 'Library', 'Application Support', 'vst3-web-stratum', 'instances');
+    return join(homedir(), 'Library', 'Application Support', 'noob-vst-webgui-framework', 'instances');
   }
   const base = process.env.XDG_RUNTIME_DIR || join(homedir(), '.local', 'state');
-  return join(base, 'vst3-web-stratum', 'instances');
+  return join(base, 'noob-vst-webgui-framework', 'instances');
 }
 
 async function probe(p, ms = 500) {

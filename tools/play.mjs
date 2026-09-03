@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * play.mjs — send notes to a running vst3-web-stratum synth and check that it makes
+ * play.mjs — send notes to a running noob-vst-webgui-framework synth and check that it makes
  * sound (peak of the `meter_out` stream), headlessly.
  *
  *   node tools/play.mjs <port> [note=60] [ms=400]

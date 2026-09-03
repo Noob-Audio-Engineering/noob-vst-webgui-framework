@@ -3,12 +3,12 @@
 Symptoms, likely causes, and what to do. When in doubt, run
 `node tools/instances.mjs` to see what is running and on which port, and
 open the instance's URL in a normal browser: if the page works there, the
-problem is in the web view or the host, not in vst3-web-stratum.
+problem is in the web view or the host, not in noob-vst-webgui-framework.
 
 ## The editor window is blank
 
 * **No `web/dist`.** The plug-in embeds `web/dist` at compile time. If the
-  page 404s, rebuild the SPA (`npm run build` in the example's `web/`) and
+  page 404s, rebuild the SPA (`npm run build` in the plug-in's `web/`) and
   rebuild the plug-in. The standalone prints "web/dist not found" with the
   commands to run.
 * **WebView2 runtime missing (Windows 10).** The adapter logs "embedded web
@@ -23,7 +23,7 @@ problem is in the web view or the host, not in vst3-web-stratum.
 
 * The page's origin and the server differ. The client connects to
   `location.host` by default; a page served by Vite must proxy `/ws` (the
-  example configs do, using `VST3_WEB_STRATUM_PORT`). If you open `dist/index.html`
+  plug-ins' Vite configs do, using `NOOB_VST_WEBGUI_FRAMEWORK_PORT`). If you open `dist/index.html`
   from the file system there is no server behind it.
 * The server died. The standalone prints its URL on start; a plug-in logs
   through nih-plug's `nih_log!`. Reopen the editor to restart the server (it
@@ -57,7 +57,7 @@ problem is in the web view or the host, not in vst3-web-stratum.
   usable timer (only Windows has one today) the adapter forwards them from
   the net thread. If neither happens, the log shows why.
 * `drain_edits` is never called in a standalone: the host loop must call it
-  (the examples do every 5 ms).
+  (the plug-ins do every 5 ms).
 
 ## Streams are choppy or late
 
@@ -78,7 +78,7 @@ then replays the last frame to late clients.
 
 * They live in the UI store since the multi-instance work, not in
   `localStorage`. A plug-in persists them in its state: reload the session.
-  A standalone keeps them in `<data dir>/vst3-web-stratum/<name>.store.json`.
+  A standalone keeps them in `<data dir>/noob-vst-webgui-framework/<name>.store.json`.
 * A state saved before the store existed has no store; that is expected.
 * A value over 256 KiB or a store over 1 MiB is rejected; the page logs a
   `store.error` warning in the console.
@@ -107,7 +107,7 @@ The standalone you are rebuilding is running. Kill it:
 * The device is exclusive to another application (ASIO drivers do this).
 * The output meter moves but you hear nothing: the OS routed the default
   device somewhere else (a monitor's HDMI audio is a common one, and is the
-  device the example picked in testing).
+  device Noob-Wave picked in testing).
 * `node tools/play.mjs 4243` reports the peak level; if it is silent there
   too, the synth is not receiving events: check that the page is connected
   to the right port.

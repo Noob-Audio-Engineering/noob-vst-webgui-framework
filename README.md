@@ -1,7 +1,7 @@
-# vst3-web-stratum
+# noob-vst-webgui-framework
 
 **Build your audio plug-in's UI with web technology, without paying for it
-in latency, weight or real-time safety.** vst3-web-stratum is a Rust
+in latency, weight or real-time safety.** noob-vst-webgui-framework is a Rust
 framework: the DSP stays in Rust, the window is the operating system's own
 web view, and a local binary WebSocket bridge moves parameters, gestures,
 notes and telemetry between them in tens of microseconds.
@@ -33,7 +33,7 @@ plug-ins have not used it are practical, not fundamental: shipping a
 browser engine per plug-in is absurd, JSON-over-HTTP is far too slow for a
 knob, and nobody wants a web page anywhere near an audio callback.
 
-vst3-web-stratum removes those three obstacles and nothing else:
+noob-vst-webgui-framework removes those three obstacles and nothing else:
 
 * **No bundled engine.** The plug-in window hosts the OS web view (WebView2
   on Windows, WKWebView on macOS, WebKitGTK on Linux) through `wry`. A
@@ -56,7 +56,7 @@ vst3-web-stratum removes those three obstacles and nothing else:
   WebGL. Develop it in a normal browser tab against the running plug-in with
   hot reload, inspect it with devtools, and hand it to a designer who has
   never opened a DAW.
-* **A complete client library.** `@elyerinfox/vst3-web-stratum` gives you
+* **A complete client library.** `@noob-audio-engineering/noob-vst-webgui-framework` gives you
   parameter handles that know their range, taper, unit and formatting;
   streams; events; a plug-in-persisted key-value store; undo, redo and A/B;
   and dependency-free canvas components (knob, meter, spectrum analyzer, EQ
@@ -79,10 +79,12 @@ vst3-web-stratum removes those three obstacles and nothing else:
   tools/bench.mjs` measures latency, `tools/setparam.mjs` sets a parameter,
   `tools/play.mjs` plays a note and checks the meter, `tools/instances.mjs`
   lists what is running. Headless UI checks are a browser screenshot away.
-* **Small, generic, documented.** The framework knows nothing about EQs or
-  synths. Two complete examples show what a product built on it looks like:
-  a 24-band Pro-Q style EQ and a wavetable synth, each with DSP, a VST3/CLAP
-  plug-in, a standalone with real audio and a Vue + Tailwind interface.
+* **Small, generic, documented.** The framework knows nothing about EQs,
+  synths or compressors. Three free plug-ins by Noob Audio Engineering show
+  what a product built on it looks like: a 24-band Pro-Q style EQ, a
+  wavetable synth and a two-model compressor, each with DSP, a VST3/CLAP
+  plug-in, a standalone and a Vue + Tailwind interface (see
+  [Plug-ins built on it](#plug-ins-built-on-it)).
 
 ## What it costs
 
@@ -117,84 +119,82 @@ a millisecond of jitter. Details and tuning in
 
 ## Layout
 
-Framework (published as **elyerinfox**):
+Framework (published by **Noob Audio Engineering**):
 
 | path | what it is |
 |---|---|
-| `crates/vst3-web-stratum` | The bridge and server: wire protocol, parameter store, stream mailboxes, event queues, discovery, the UI store. No plug-in-framework dependency. Ships the browser client in `web/`. |
-| `crates/vst3-web-stratum/web` | `@elyerinfox/vst3-web-stratum`: the browser client (ESM, zero dependencies), the canvas components, undo/redo/A-B, and the optional Vue 3 layer (`/vue`). |
-| `crates/vst3-web-stratum-nih` | The `nih-plug` `Editor` adapter: parameter mirroring, GUI-thread gesture forwarding, the embedded web view, resizing from either side, `StoreSlot` persistence. |
-| `crates/vst3-web-stratum-webview` | The OS web view (WebView2 / WKWebView / WebKitGTK via `wry`) as a child of a host window, plus a native UI-thread timer. |
+| `crates/noob-vst-webgui-framework` | The bridge and server: wire protocol, parameter store, stream mailboxes, event queues, discovery, the UI store. No plug-in-framework dependency. Ships the browser client in `web/`. |
+| `crates/noob-vst-webgui-framework/web` | `@noob-audio-engineering/noob-vst-webgui-framework`: the browser client (ESM, zero dependencies), the canvas components, undo/redo/A-B, and the optional Vue 3 layer (`/vue`). |
+| `crates/noob-vst-webgui-framework-nih` | The `nih-plug` `Editor` adapter: parameter mirroring, GUI-thread gesture forwarding, the embedded web view, resizing from either side, `StoreSlot` persistence. |
+| `crates/noob-vst-webgui-framework-webview` | The OS web view (WebView2 / WKWebView / WebKitGTK via `wry`) as a child of a host window, plus a native UI-thread timer. |
 
-Examples (never published; `publish = false`, npm `private`). I wrote them
-as humorous, affectionate spoofs of products I admire, to exercise the
-framework at product size; neither aims at parity with, or replacement of,
-the originals that inspired it:
+Plus `docs/` (the guides), `tools/` (the Node scripts), `.github/workflows/`
+(CI and the docs site) and a root `package.json` that makes the browser
+package installable straight from this repository.
 
-| path | what it is |
+## Plug-ins built on it
+
+Noob Audio Engineering publishes three free plug-ins on this framework, each
+in its own repository. I wrote them as humorous, affectionate spoofs of
+products I admire, to exercise the framework at product size; none aims at
+parity with, or replacement of, the original that inspired it. Each
+repository holds the DSP, the nih-plug VST3/CLAP plug-in, a standalone dev
+server and a Vue + Tailwind interface, with its own build instructions.
+
+| repository | what it is |
 |---|---|
-| `examples/noob-q` | **Noob-Q**, a Pro-Q style 24-band EQ: Rust DSP, nih-plug VST3/CLAP effect with side-chain, standalone dev server, Vue + Tailwind SPA. Feature coverage in [docs/FEATURES.md](docs/FEATURES.md). |
-| `examples/noob-wave` | **Noob-Wave**, a wavetable synth: mipmapped tables, unison, sub, SVF filter, two ADSRs, LFO, 16 voices; nih-plug VST3/CLAP instrument with MIDI; standalone with real audio output; Vue + Tailwind SPA with an on-screen keyboard. |
-| `examples/noob-compressorlab` | **Noob CompressorLab**, two classic compressors in one plug-in, chosen per instance with a `model` parameter: an 1176-style FET compressor (feedback detector, ratio buttons with the all-buttons mode, every hardware revision from the blue-stripe A to the LN with its own faceplate, FET and line-amp saturation) and an LA-2A-style optical compressor (T4-cell light and photoresistor model with the two-stage, memory-dependent release, Compress / Limit, sidechain emphasis, tube-stage saturation); needle meters, gain-reduction histories and transfer curves; nih-plug VST3/CLAP effect, standalone, Vue + Tailwind SPA. `research/1176.md` and `research/LA-2A.md` document how the originals work and how they are simulated. |
+| [noob-q](https://github.com/Noob-Audio-Engineering/noob-q) | **Noob-Q**, a Pro-Q style 24-band EQ: Rust DSP, nih-plug VST3/CLAP effect with side-chain, standalone dev server, Vue + Tailwind SPA; its `docs/FEATURES.md` tracks the Pro-Q 4 coverage. |
+| [noob-wave](https://github.com/Noob-Audio-Engineering/noob-wave) | **Noob-Wave**, a wavetable synth: mipmapped tables, unison, sub, SVF filter, two ADSRs, LFO, 16 voices; nih-plug VST3/CLAP instrument with MIDI; standalone with real audio output; Vue + Tailwind SPA with an on-screen keyboard. |
+| [noob-compressorlab](https://github.com/Noob-Audio-Engineering/noob-compressorlab) | **Noob CompressorLab**, two classic compressors in one plug-in, chosen per instance with a `model` parameter: an 1176-style FET compressor (every hardware revision with its own faceplate) and an LA-2A-style optical compressor (T4-cell model); needle meters, gain-reduction history and transfer curves; nih-plug VST3/CLAP effect, standalone, Vue + Tailwind SPA. Its `research/` folder documents how the originals work and how they are simulated. |
 
-Plus `docs/` (the guides), `tools/` (the Node scripts) and `.github/workflows/`
-(CI and the docs site).
+Every plug-in is also a server, so the scripts in `tools/` work against any
+of them: clone one, build its SPA and run its standalone as its README says,
+then `node tools/bench.mjs <port>` measures latency, `node tools/play.mjs
+<port> 60` plays a note on the synth, and `node tools/instances.mjs` lists
+what is running (standalones and plug-in instances inside a DAW alike). Run
+a standalone twice and the second copy takes the next port; user presets
+saved in one window show up in every window of that instance. During UI
+development, `NOOB_VST_WEBGUI_FRAMEWORK_PORT=<port> npm run dev` in a
+plug-in's `web/` folder opens a Vite page with hot reload that proxies `/ws`
+and `/instance*` to the running standalone.
 
-## Run the examples without a DAW
-
-```sh
-# Noob-Q (EQ): visual only, port 4242 (or the next free one; --port N insists)
-cd examples/noob-q/web && npm install && npm run build && cd ../../..
-cargo run -p noob-q --bin noob-q-standalone -- --open
-
-# Noob-Wave (synth): plays through your default audio device, port 4243 (or the next free one)
-cd examples/noob-wave/web && npm install && npm run build && cd ../../..
-cargo run -p noob-wave --bin noob-wave-standalone -- --open
-# then play the on-screen keyboard, or the A W S E D F … keys
-
-# measure either one
-node tools/bench.mjs 4243
-node tools/play.mjs 4243 60
-
-# the compressor lab: port 4244, visual only like Noob-Q; pick 1176 or LA-2A in the page
-cd examples/noob-compressorlab/web && npm install && npm run build && cd ../../..
-cargo run -p noob-compressorlab --bin noob-compressorlab-standalone -- --open
-
-# what is running (all of them, plus any plug-in instance in a DAW)
-node tools/instances.mjs
-```
-
-Run either standalone twice and the second copy takes the next port; user
-presets saved in one window show up in every window of that instance.
-
-During UI development run `VST3_WEB_STRATUM_PORT=<port> npm run dev` in the example's
-`web/` folder and open the Vite URL; it proxies `/ws` and `/instance*` to
-the running standalone.
-
-## Build the plug-ins
-
-The `plugin` feature pulls `nih-plug` from git and embeds the example's
-`web/dist`, so build the SPA first.
-
-```sh
-cd examples/noob-wave/web && npm run build && cd ../../..
-cargo build -p noob-wave --features plugin --release   # → target/release/noob_wave.dll
-cargo build -p noob-q    --features plugin --release   # → target/release/noob_q.dll
-```
-
-Wrap them into `.vst3` / `.clap` bundles with nih-plug's bundler
+Each plug-in's `plugin` feature pulls nih-plug from git and embeds the
+built `web/dist`, so `npm run build` in `web/` comes before
+`cargo build --release --features plugin`. The cdylib wraps into `.vst3` /
+`.clap` bundles with nih-plug's bundler
 (`cargo install --git https://github.com/robbert-vdh/nih-plug.git nih_plug_xtask`,
-then `cargo xtask bundle noob-wave --features plugin --release`). Opening the
-editor in a host embeds WebView2 (Windows) or WKWebView (macOS) in the plug-in
-window; on Linux, or if the web view cannot be created, the same page opens in
-the system browser instead.
+then `cargo xtask bundle <crate> --features plugin --release`). Opening the
+editor in a host embeds WebView2 (Windows) or WKWebView (macOS) in the
+plug-in window; on Linux, or if the web view cannot be created, the same
+page opens in the system browser instead.
+
+A plug-in takes the framework from git on both sides, with no crates.io or
+npm release involved:
+
+```toml
+[dependencies]
+noob-vst-webgui-framework = { git = "https://github.com/Noob-Audio-Engineering/noob-vst-webgui-framework" }
+noob-vst-webgui-framework-nih = { git = "https://github.com/Noob-Audio-Engineering/noob-vst-webgui-framework", optional = true }
+
+# host-driven window resizing needs the patched nih-plug until it lands upstream
+[patch."https://github.com/robbert-vdh/nih-plug.git"]
+nih_plug = { git = "https://github.com/Noob-Audio-Engineering/nih-plug.git", branch = "host-resize" }
+```
+
+```sh
+npm install github:Noob-Audio-Engineering/noob-vst-webgui-framework   # @noob-audio-engineering/noob-vst-webgui-framework
+```
+
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#using-the-framework-from-another-repository)
+has the Vite and Tailwind settings that go with it, and `npm link` for
+working on the framework and a plug-in at the same time.
 
 ## Use it in your own plug-in
 
 ```rust
-use vst3_web_stratum::{Vst3WebStratum, ParamSpec, StreamSpec, StreamKind, ServerConfig, event_kind};
+use noob_vst_webgui_framework::{NoobVstWebguiFramework, ParamSpec, StreamSpec, StreamKind, ServerConfig, event_kind};
 
-let bridge = Vst3WebStratum::builder("MyPlugin")
+let bridge = NoobVstWebguiFramework::builder("MyPlugin")
     .param(ParamSpec::new("cutoff", "Cutoff").range(20.0, 20000.0).log().default(1000.0).unit("Hz"))
     .stream(StreamSpec::new("meter", 2).kind(StreamKind::Meter).channels(2))
     .stream(StreamSpec::new("curve", 256).kind(StreamKind::Curve).sticky())  // replayed to late clients
@@ -207,22 +207,24 @@ audio.drain_events(|e| if e.kind == event_kind::NOTE_ON { /* note e.a, velocity 
 audio.publish_slice(0, &[peak_l, peak_r]);
 
 // anywhere else
-let server = vst3_web_stratum::serve(&bridge, ServerConfig::default().assets_dir("ui/dist"))?;
+let server = noob_vst_webgui_framework::serve(&bridge, ServerConfig::default().assets_dir("ui/dist"))?;
 println!("{}", server.url());
 ```
 
-With nih-plug, `vst3_web_stratum_nih::Vst3WebStratumEditor::new(name, &params, streams, EditorConfig::new(w, h))`
+With nih-plug, `noob_vst_webgui_framework_nih::NoobVstWebguiFrameworkEditor::new(name, &params, streams, EditorConfig::new(w, h))`
 does the mirroring, the server, the web view and the gesture forwarding; see
-`examples/noob-wave/src/plugin.rs` (instrument with MIDI) and
-`examples/noob-q/src/plugin.rs` (effect with side-chain).
+Noob-Wave's [`src/plugin.rs`](https://github.com/Noob-Audio-Engineering/noob-wave/blob/main/src/plugin.rs)
+(instrument with MIDI) and Noob-Q's
+[`src/plugin.rs`](https://github.com/Noob-Audio-Engineering/noob-q/blob/main/src/plugin.rs)
+(effect with side-chain).
 
 In the page:
 
 ```js
-import { Vst3WebStratumClient, History } from '@elyerinfox/vst3-web-stratum';
-import { Knob, Spectrum, EqCurve, Keyboard, WavetableView, Envelope } from '@elyerinfox/vst3-web-stratum/components';
+import { NoobVstWebguiFrameworkClient, History } from '@noob-audio-engineering/noob-vst-webgui-framework';
+import { Knob, Spectrum, EqCurve, Keyboard, WavetableView, Envelope } from '@noob-audio-engineering/noob-vst-webgui-framework/components';
 
-const client = await Vst3WebStratumClient.connect();      // ws://<host>/ws
+const client = await NoobVstWebguiFrameworkClient.connect();      // ws://<host>/ws
 const cutoff = client.param('cutoff');
 cutoff.on((v) => console.log(cutoff.plain));       // host automation, other UIs
 cutoff.beginEdit(); cutoff.set(0.5); cutoff.endEdit();
@@ -237,14 +239,14 @@ new History(client);                               // Ctrl+Z material
 With Vue:
 
 ```js
-import { useVst3WebStratum, useParam, Knob, Popover, ContextMenu, LevelMeter } from '@elyerinfox/vst3-web-stratum/vue';
-const { ready } = useVst3WebStratum();
+import { useNoobVstWebguiFramework, useParam, Knob, Popover, ContextMenu, LevelMeter } from '@noob-audio-engineering/noob-vst-webgui-framework/vue';
+const { ready } = useNoobVstWebguiFramework();
 const cutoff = useParam('cutoff');   // reactive: cutoff.plain, cutoff.text, cutoff.set(n)
 ```
 
 Any framework works on top of this: `Param` and `Stream` are plain objects
 with `on()`. The framework crates and the browser package know nothing about
-any particular product; everything product specific lives in the examples.
+any particular product; everything product specific lives in the plug-ins.
 [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) walks through a complete
 plug-in.
 
@@ -256,15 +258,15 @@ Start at [`docs/README.md`](docs/README.md), the index. The main entries:
 |---|---|
 | [Getting started](docs/GETTING-STARTED.md) | Build a plug-in with a browser UI end to end: DSP, standalone, page, nih-plug plug-in. |
 | [Architecture](docs/ARCHITECTURE.md) | Crates, threads, data model, the real-time contract, latency budget, design decisions. |
-| [Rust API tour](docs/RUST-API.md) | `vst3-web-stratum`, `vst3-web-stratum-nih`, `vst3-web-stratum-webview` at a glance; rustdoc has the rest (`cargo doc --open`). |
-| [Browser API](crates/vst3-web-stratum/web/README.md) | `@elyerinfox/vst3-web-stratum`: client, parameters, streams, store, history, Vue layer; [components](crates/vst3-web-stratum/web/components/README.md). |
+| [Rust API tour](docs/RUST-API.md) | `noob-vst-webgui-framework`, `noob-vst-webgui-framework-nih`, `noob-vst-webgui-framework-webview` at a glance; rustdoc has the rest (`cargo doc --open`). |
+| [Browser API](crates/noob-vst-webgui-framework/web/README.md) | `@noob-audio-engineering/noob-vst-webgui-framework`: client, parameters, streams, store, history, Vue layer; [components](crates/noob-vst-webgui-framework/web/components/README.md). |
 | [Wire format](docs/WIRE.md) | Every frame, byte by byte. |
 | [Multiple instances](docs/MULTI-INSTANCE.md) | Ports, discovery, the UI store. |
 | [Performance](docs/PERFORMANCE.md) | Numbers, methodology, tuning. |
 | [Tools](docs/TOOLS.md) | The `tools/` scripts. |
 | [Development](docs/DEVELOPMENT.md) | Working on this repository; CI; quirks. |
 | [Troubleshooting](docs/TROUBLESHOOTING.md) | When something does not work. |
-| Examples | [Noob-Q](examples/noob-q/README.md) and its [SPA](examples/noob-q/web/README.md); [Noob-Wave](examples/noob-wave/README.md) and its [SPA](examples/noob-wave/web/README.md); [feature coverage](docs/FEATURES.md). |
+| Plug-ins | [Noob-Q](https://github.com/Noob-Audio-Engineering/noob-q), [Noob-Wave](https://github.com/Noob-Audio-Engineering/noob-wave) and [Noob CompressorLab](https://github.com/Noob-Audio-Engineering/noob-compressorlab), each repository documenting its DSP, parameters, streams and page; Noob-Q also carries `docs/FEATURES.md`, its Pro-Q 4 coverage. |
 
 The Rust API documentation of the framework crates is published to GitHub
 Pages by the docs workflow on every push to `main`. Changes are tracked in
@@ -302,15 +304,16 @@ Pages by the docs workflow on every push to `main`. Changes are tracked in
 ## Status
 
 Version 0.1.0. Everything builds with zero warnings under `clippy -D
-warnings`; 71 Rust tests pass (core wire / real-time / bridge unit tests,
+warnings`; 46 tests pass (23 core wire / real-time / bridge unit tests,
 eight socket-level integration tests covering the round trip, events, sticky
 streams, port probing, the UI store, discovery, instance scoping and several
-clients at once, 14 EQ DSP tests, 11 synth DSP tests, and the doctests).
-Both plug-ins compile-check with their `plugin` feature but have not yet
-been run inside a host. The synth standalone has been verified end to end on
-real hardware: a note sent from the page produces sound on the default
-output device and releases cleanly. Linux and macOS builds of the web view
-are written against `wry` but have only been exercised on Windows.
+clients at once, and 15 doctests). The three plug-ins build in their own
+repositories against these crates from git and compile as VST3 and CLAP,
+but have not yet been run inside a host. Noob-Wave's standalone has been
+verified end to end on real hardware: a note sent from the page produces
+sound on the default output device and releases cleanly. Linux and macOS
+builds of the web view are written against `wry` but have only been
+exercised on Windows.
 
 ## License
 

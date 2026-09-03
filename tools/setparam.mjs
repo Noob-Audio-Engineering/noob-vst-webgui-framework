@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * setparam.mjs — set a parameter on a running vst3-web-stratum server from the shell.
+ * setparam.mjs — set a parameter on a running noob-vst-webgui-framework server from the shell.
  *
  *   node tools/setparam.mjs <port> <id> <normalized 0..1>
  *   node tools/setparam.mjs 4242 display_range 1        # ±30 dB (last label)

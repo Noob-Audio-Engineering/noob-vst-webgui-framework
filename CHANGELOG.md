@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to vst3-web-stratum. The format follows
+All notable changes to noob-vst-webgui-framework. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 the workspace version in `Cargo.toml`.
 
@@ -8,7 +8,7 @@ the workspace version in `Cargo.toml`.
 
 ### Added
 
-- A third example, Noob CompressorLab: two classic compressors in one
+- A third plug-in, Noob CompressorLab: two classic compressors in one
   plug-in, chosen per instance with a `model` parameter. The 1176 side is a
   FET compressor (feedback detector, ratio buttons with the all-buttons
   mode, every hardware revision from A to LN with its own circuit constants
@@ -35,13 +35,32 @@ the workspace version in `Cargo.toml`.
   Vite configs that keep the linked framework out of the dependency
   pre-bundle so framework edits hot-reload.
 
+### Changed
+
+- Renamed from vst3-web-stratum to noob-vst-webgui-framework and moved to
+  the Noob Audio Engineering organisation: the crates
+  `noob-vst-webgui-framework`, `noob-vst-webgui-framework-nih` and
+  `noob-vst-webgui-framework-webview`, the browser package
+  `@noob-audio-engineering/noob-vst-webgui-framework`, and every identifier,
+  route, CSS variable, environment variable and store key with them
+  (`NoobVstWebguiFramework*`, `useNoobVstWebguiFramework`,
+  `/noob-vst-webgui-framework/`, `--noob-vst-webgui-framework-*`,
+  `NOOB_VST_WEBGUI_FRAMEWORK_PORT`, `noob_vst_webgui_framework_ui_store`).
+- The plug-ins left this repository for their own: Noob-Q, Noob-Wave and
+  Noob CompressorLab are free plug-ins published by Noob Audio Engineering,
+  each depending on the framework crates from git and on the browser
+  package installed from this repository, which a root `package.json`
+  re-exports. Noob-Q's feature coverage documents went with it.
+- The nih-plug fork with host-driven resizing moved to
+  `Noob-Audio-Engineering/nih-plug`.
+
 ## [0.1.0] - 2026-09-03
 
 First complete version.
 
 ### Framework
 
-- `vst3-web-stratum`: the bridge (`Vst3WebStratum`, `AudioHandle`), normalized
+- `noob-vst-webgui-framework`: the bridge (`NoobVstWebguiFramework`, `AudioHandle`), normalized
   parameters with linear / log / skew / table tapers, wait-free stream
   mailboxes with sticky replay, binary event frames, JSON messages, the UI
   store with size caps, a hand-rolled little-endian wire format
@@ -50,19 +69,19 @@ First complete version.
   (fixed / ephemeral / probe), instance discovery (`/instance`,
   `/instances`, per-user discovery directory), and `FileStore` for
   standalone persistence.
-- `vst3-web-stratum-webview`: the OS web view (WebView2 / WKWebView / WebKitGTK via
+- `noob-vst-webgui-framework-webview`: the OS web view (WebView2 / WKWebView / WebKitGTK via
   `wry`) as a child of a host window, plus a native UI timer.
-- `vst3-web-stratum-nih`: an nih-plug `Editor` that is the web view, parameter
+- `noob-vst-webgui-framework-nih`: an nih-plug `Editor` that is the web view, parameter
   mirroring as 65-point tables, GUI-thread gesture forwarding, resize
   requests, name-hashed port probing, discovery, and `StoreSlot` persistence
   of the UI store in plug-in state.
-- `@elyerinfox/vst3-web-stratum`: the browser client with zero-copy stream decoding,
+- `@noob-audio-engineering/noob-vst-webgui-framework`: the browser client with zero-copy stream decoding,
   reconnect, parameter handles, gestures, history (undo / redo / A-B),
   events, the store; dependency-free canvas components (knob, meter,
   spectrum, EQ curve, scope, keyboard, wavetable, envelope); a Vue 3 layer
   with composables and components.
 
-### Examples
+### Plug-ins
 
 - Noob-Q: a Pro-Q 4 style 24-band EQ (ten shapes, slopes to brickwall,
   dynamics, placement, zero / natural / linear phase, EQ match, spectrum

@@ -6,7 +6,7 @@ them when building a plug-in. Signatures are abbreviated; rustdoc
 and `# Real-time` notes, and examples. Thread annotations use the names from
 [ARCHITECTURE.md](ARCHITECTURE.md#threads).
 
-## vst3-web-stratum
+## noob-vst-webgui-framework
 
 ### Declaring: `ParamSpec`, `StreamSpec`
 
@@ -38,10 +38,10 @@ StreamSpec::new(id, capacity)      // capacity = max samples per frame
     .sticky()                      // replay the last frame to late clients
 ```
 
-### Building: `Vst3WebStratumBuilder` → `Vst3WebStratum`
+### Building: `NoobVstWebguiFrameworkBuilder` → `NoobVstWebguiFramework`
 
 ```rust
-let bridge = Vst3WebStratum::builder("My Plug-in")
+let bridge = NoobVstWebguiFramework::builder("My Plug-in")
     .meta(json!({ "vendor": "…", "sample_rate": 48000.0 }))   // free-form, sent in the manifest
     .param(spec) / .params(iter)
     .stream(spec)
@@ -50,9 +50,9 @@ let bridge = Vst3WebStratum::builder("My Plug-in")
     .build();
 ```
 
-`Vst3WebStratum` is cheap to clone (an `Arc`); every clone is the same bridge.
+`NoobVstWebguiFramework` is cheap to clone (an `Arc`); every clone is the same bridge.
 
-### The host side of `Vst3WebStratum` (any thread except audio)
+### The host side of `NoobVstWebguiFramework` (any thread except audio)
 
 | Method | Purpose |
 |---|---|
@@ -99,20 +99,20 @@ let cfg = ServerConfig::default()
     .echo_edits(true)                      // echo a client's own edits back to it
     .wake(WakeMode::Unpark)                // or WakeMode::Poll
     .poll_interval(Duration::from_millis(1));
-let server = vst3_web_stratum::serve(&bridge, cfg)?;
+let server = noob_vst_webgui_framework::serve(&bridge, cfg)?;
 server.url(); server.ws_url(); server.port(); server.addr(); server.client_count();
 server.shutdown();                          // or drop it
 ```
 
 `Assets::{None, Dir(PathBuf), Embedded(&'static [(&str, &[u8])]),
 Lookup(fn(&str) -> Option<&'static [u8]>)}`. The client library is always
-served under `/vst3-web-stratum/` (`CLIENT_ASSETS`), so a page can import
-`/vst3-web-stratum/vst3-web-stratum.js` without bundling.
+served under `/noob-vst-webgui-framework/` (`CLIENT_ASSETS`), so a page can import
+`/noob-vst-webgui-framework/noob-vst-webgui-framework.js` without bundling.
 
 `PortPolicy::{Fixed(u16), Ephemeral, Probe { base, span }}` and
 `PortPolicy::for_name(&str)`.
 
-### Discovery (`vst3_web_stratum::discovery`)
+### Discovery (`noob_vst_webgui_framework::discovery`)
 
 `Instance { name, pid, port, url, started, protocol }`, `Instance::new(name,
 port)`, `dir()`, `publish(&Instance)`, `unpublish(&path)`, `list_files()`,
@@ -127,24 +127,24 @@ let store = FileStore::attach(&bridge, FileStore::default_path("my-app"));
 loop { store.flush()?; /* … */ }     // writes only when something changed
 ```
 
-### The wire codec (`vst3_web_stratum::wire`)
+### The wire codec (`noob_vst_webgui_framework::wire`)
 
 `Kind` (frame kinds), `Frame` (decoded view), `ParamValuesWriter`,
 `ParamEditWriter`, `EventsWriter`, `encode_stream_f32`, the header and entry
 length constants, `PROTOCOL_VERSION`. You need these only for a client in
-another language or a custom transport; the server and `@elyerinfox/vst3-web-stratum` use
+another language or a custom transport; the server and `@noob-audio-engineering/noob-vst-webgui-framework` use
 them for you. [WIRE.md](WIRE.md) documents the bytes.
 
-### Real-time primitives (`vst3_web_stratum::rt`)
+### Real-time primitives (`noob_vst_webgui_framework::rt`)
 
 `AtomicF32` and `mailbox()` (a wait-free single-writer, single-reader triple
 buffer returning `MailboxWriter` / `MailboxReader`). Reusable in your own
 DSP for anything "latest wins".
 
-## vst3-web-stratum-nih
+## noob-vst-webgui-framework-nih
 
 ```rust
-let (editor, bridge) = Vst3WebStratumEditor::with_builder(
+let (editor, bridge) = NoobVstWebguiFrameworkEditor::with_builder(
     "My Plug-in", params.as_ref(), streams(48_000.0),
     EditorConfig::new(1000, 640).assets(Assets::Lookup(ui_lookup)),
     |b| b.meta(json!({ … })),
@@ -156,20 +156,20 @@ params.ui_store.attach(&bridge);
 
 | Item | Purpose |
 |---|---|
-| `mirror_params(&dyn Params) -> Vec<(ParamSpec, ParamPtr)>` | nih-plug parameters as vst3-web-stratum specs with 65-point tables, in `param_map` order |
+| `mirror_params(&dyn Params) -> Vec<(ParamSpec, ParamPtr)>` | nih-plug parameters as noob-vst-webgui-framework specs with 65-point tables, in `param_map` order |
 | `EditorConfig { width, height, assets, port: Option<PortPolicy>, discovery, devtools, echo_edits, forward_interval, min_size, max_size }` | builders `.assets .port .port_policy .discovery .devtools .size_limits` |
-| `Vst3WebStratumEditor::{new, with_builder, handle, bridge, ensure_server, url, size}` | one per plug-in instance; the server starts lazily on the first editor open |
+| `NoobVstWebguiFrameworkEditor::{new, with_builder, handle, bridge, ensure_server, url, size}` | one per plug-in instance; the server starts lazily on the first editor open |
 | `EditorHandle: nih_plug::Editor` | what `Plugin::editor` returns; `spawn` embeds the web view, installs the UI timer, syncs from the host |
 | `StoreSlot::{new, attach, serialize_into, deserialize_from}`, `StoreSlot::KEY` | persist the UI store in plug-in state |
 
 Messages the adapter consumes: `resize` `{ width, height }` and
 `fullscreen` `{ on, width?, height? }`. Everything else is left in the queue
-for `Vst3WebStratum::poll_message`. `EditorHandle` also implements the
+for `NoobVstWebguiFramework::poll_message`. `EditorHandle` also implements the
 host-to-plugin side, `can_resize` / `check_size_constraint` / `set_size`,
 which exist only in the patched nih-plug this workspace builds against (see
 [DEVELOPMENT.md](DEVELOPMENT.md)).
 
-## vst3-web-stratum-webview
+## noob-vst-webgui-framework-webview
 
 | Item | Purpose |
 |---|---|
@@ -187,6 +187,6 @@ which exist only in the patched nih-plug this workspace builds against (see
   parameter's unit.
 * Everything that can fail on the audio thread returns `bool` (published /
   queued or not) rather than `Result`, and never logs there.
-* `Vst3WebStratum` and `AudioHandle` are `Send`; `AudioHandle` is not `Sync` and is
+* `NoobVstWebguiFramework` and `AudioHandle` are `Send`; `AudioHandle` is not `Sync` and is
   meant to live on one thread. `EmbeddedWebView` and `UiTimer` are neither
   and must stay on the GUI thread.

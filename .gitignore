@@ -3,7 +3,7 @@
 
 # Node (each SPA and the shared library)
 node_modules/
-examples/*/web/dist/
+dist/
 *.log
 npm-debug.log*
 

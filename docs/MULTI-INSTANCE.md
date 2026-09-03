@@ -9,7 +9,7 @@ rather than the browser. This document covers all three.
 ## Ports
 
 A server binds `127.0.0.1` under one of three policies (`PortPolicy` in
-`vst3-web-stratum`):
+`noob-vst-webgui-framework`):
 
 | Policy | Behaviour | Use it when |
 |---|---|---|
@@ -33,7 +33,7 @@ panicking. `--port N` switches to `Fixed(N)`.
 In code:
 
 ```rust
-use vst3_web_stratum::{PortPolicy, ServerConfig};
+use noob_vst_webgui_framework::{PortPolicy, ServerConfig};
 
 ServerConfig::default().port(4242);                 // Fixed(4242); 0 means Ephemeral
 ServerConfig::default().prefer_port(4242);          // Probe { base: 4242, span: 32 }
@@ -50,9 +50,9 @@ Every server (unless `ServerConfig::discovery(false)`) writes a JSON record
 on start and removes it on a clean stop:
 
 ```
-%LOCALAPPDATA%\vst3-web-stratum\instances\<pid>-<port>.json            Windows
-~/Library/Application Support/vst3-web-stratum/instances/<pid>-<port>.json   macOS
-$XDG_RUNTIME_DIR/vst3-web-stratum/instances/<pid>-<port>.json           Linux (falls back to ~/.local/state)
+%LOCALAPPDATA%\noob-vst-webgui-framework\instances\<pid>-<port>.json            Windows
+~/Library/Application Support/noob-vst-webgui-framework/instances/<pid>-<port>.json   macOS
+$XDG_RUNTIME_DIR/noob-vst-webgui-framework/instances/<pid>-<port>.json           Linux (falls back to ~/.local/state)
 ```
 
 ```json
@@ -67,7 +67,7 @@ process) are deleted, and records of other plug-ins are left out. A record
 is trusted only if the answering server reports the same pid, so a port
 reused by an unrelated program is not mistaken for an instance. Instance
 features are scoped to one product on purpose: an EQ's instance list should
-show the other copies of that EQ, not every vst3-web-stratum app on the machine.
+show the other copies of that EQ, not every noob-vst-webgui-framework app on the machine.
 `GET /instances?all=1` lifts the restriction for tooling.
 
 From the shell, `node tools/instances.mjs` scans everything without a
@@ -76,7 +76,7 @@ running server (`--name noob-q` narrows it), and `node tools/instances.mjs
 every instance). The Noob-Q instance button (bottom centre) lists the other
 live Noob-Q instances and opens them in a new window.
 
-The Rust API is in `vst3_web_stratum::discovery`: `Instance`, `dir()`,
+The Rust API is in `noob_vst_webgui_framework::discovery`: `Instance`, `dir()`,
 `publish`, `unpublish`, `list_files`, `probe`, `list_live`.
 
 ## The UI store
@@ -119,7 +119,7 @@ The exact frames are in [WIRE.md](WIRE.md#reserved-topics-the-ui-store).
 ### In the browser
 
 ```js
-const client = new Vst3WebStratumClient();
+const client = new NoobVstWebguiFrameworkClient();
 client.store.ready;                       // true once store.all arrived
 client.store.get('presets.user', []);     // cached read, default if absent
 client.store.set('presets.user', list);   // local cache + store.set to the plug-in
@@ -133,27 +133,27 @@ computed bound to one key.
 
 ### In the plug-in
 
-`Vst3WebStratum` exposes `store_get`, `store_set`, `store_snapshot`, `store_json`,
+`NoobVstWebguiFramework` exposes `store_get`, `store_set`, `store_snapshot`, `store_json`,
 `store_replace`, `store_load_json` and `set_store_hook` (called on every
 change, on the net thread). Two helpers cover persistence:
 
-* **`vst3_web_stratum_nih::StoreSlot`** for plug-ins. Put one in your `Params` struct,
+* **`noob_vst_webgui_framework_nih::StoreSlot`** for plug-ins. Put one in your `Params` struct,
   call `attach(&bridge)` once the bridge exists, and forward
   `serialize_fields` / `deserialize_fields` to it. It stores the JSON under
-  the key `vst3_web_stratum_ui_store` in the plug-in's persistent fields. State the
+  the key `noob_vst_webgui_framework_ui_store` in the plug-in's persistent fields. State the
   host restores before `attach` is applied when `attach` is called, so
   construction order does not matter. A restored state without the key
   empties the store, which is the right outcome for a state saved before the
   page kept anything.
-* **`vst3_web_stratum::FileStore`** for standalones. `FileStore::attach(&vst3-web-stratum,
+* **`noob_vst_webgui_framework::FileStore`** for standalones. `FileStore::attach(&noob-vst-webgui-framework,
   path)` loads the file (a missing file is an empty store) and marks the
   store dirty on every change; `flush()` from the host loop writes it back
   atomically (temp file plus rename) only when something changed.
-  `FileStore::default_path(name)` is `<data dir>/vst3-web-stratum/<name>.store.json`,
+  `FileStore::default_path(name)` is `<data dir>/noob-vst-webgui-framework/<name>.store.json`,
   next to the discovery records. Two standalone copies of the same program
   share that file, last writer wins.
 
-### What the examples put there
+### What the plug-ins put there
 
 | Key | Owner | Value |
 |---|---|---|

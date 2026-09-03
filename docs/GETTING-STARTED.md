@@ -1,9 +1,9 @@
 # Getting started
 
-This tutorial builds a small but complete plug-in on vst3-web-stratum: **Hello
+This tutorial builds a small but complete plug-in on noob-vst-webgui-framework: **Hello
 Gain**, a stereo gain with a tone control, a level meter and an oscilloscope,
 whose editor is a Vue page in the OS web view. You will end up with the same
-shape the two examples in this repository have:
+shape the Noob Audio Engineering plug-ins have:
 
 ```
 hello-gain/
@@ -15,10 +15,10 @@ hello-gain/
   web/              a Vite + Vue project; `npm run build` writes web/dist
 ```
 
-If you prefer to read finished code, `examples/noob-wave` is this tutorial at
+If you prefer to read finished code, [noob-wave](https://github.com/Noob-Audio-Engineering/noob-wave) is this tutorial at
 full scale. Every API mentioned here is documented in rustdoc
 (`cargo doc --open`) and in [RUST-API.md](RUST-API.md); the browser side is
-in [../crates/vst3-web-stratum/web/README.md](../crates/vst3-web-stratum/web/README.md).
+in [../crates/noob-vst-webgui-framework/web/README.md](../crates/noob-vst-webgui-framework/web/README.md).
 
 ## 0. Prerequisites
 
@@ -42,16 +42,16 @@ crate-type = ["cdylib", "lib"]
 
 [features]
 default = []
-plugin = ["dep:nih_plug", "dep:vst3-web-stratum-nih", "dep:include_dir"]
+plugin = ["dep:nih_plug", "dep:noob-vst-webgui-framework-nih", "dep:include_dir"]
 
 [dependencies]
-vst3-web-stratum = { path = "../vst3-web-stratum/crates/vst3-web-stratum" }
+noob-vst-webgui-framework = { path = "../noob-vst-webgui-framework/crates/noob-vst-webgui-framework" }
 serde_json = "1"
 log = "0.4"
 env_logger = "0.11"
 # plug-in only
 nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", optional = true }
-vst3-web-stratum-nih = { path = "../vst3-web-stratum/crates/vst3-web-stratum-nih", optional = true }
+noob-vst-webgui-framework-nih = { path = "../noob-vst-webgui-framework/crates/noob-vst-webgui-framework-nih", optional = true }
 include_dir = { version = "0.7", optional = true }
 ```
 
@@ -66,7 +66,7 @@ the plug-in. Put them in `src/engine.rs`.
 ```rust
 // src/engine.rs
 use serde_json::json;
-use vst3_web_stratum::{AudioHandle, ParamSpec, StreamKind, StreamSpec};
+use noob_vst_webgui_framework::{AudioHandle, ParamSpec, StreamKind, StreamSpec};
 
 pub const SCOPE_LEN: usize = 512;
 
@@ -95,7 +95,7 @@ pub fn streams(sample_rate: f32) -> Vec<StreamSpec> {
 /// looks anything up by string.
 pub struct Ix { pub gain: usize, pub tone: usize, pub bypass: usize }
 
-pub fn indices(s: &vst3_web_stratum::Vst3WebStratum) -> Ix {
+pub fn indices(s: &noob_vst_webgui_framework::NoobVstWebguiFramework) -> Ix {
     let ix = |id: &str| s.index_of(id).expect(id);
     Ix { gain: ix("gain"), tone: ix("tone"), bypass: ix("bypass") }
 }
@@ -163,7 +163,7 @@ use std::time::{Duration, Instant};
 
 use hello_gain::engine::{self, Engine};
 use serde_json::json;
-use vst3_web_stratum::{FileStore, ServerConfig, Vst3WebStratum};
+use noob_vst_webgui_framework::{FileStore, ServerConfig, NoobVstWebguiFramework};
 
 const SR: f32 = 48_000.0;
 const BLOCK: usize = 256;
@@ -171,7 +171,7 @@ const BLOCK: usize = 256;
 fn main() {
     env_logger::init();
     let bridge = {
-        let mut b = Vst3WebStratum::builder("Hello Gain")
+        let mut b = NoobVstWebguiFramework::builder("Hello Gain")
             .meta(json!({ "vendor": "You", "sample_rate": SR, "standalone": true }))
             .params(engine::param_specs());
         for s in engine::streams(SR) {
@@ -204,7 +204,7 @@ fn main() {
     // Page state (presets, view settings) persists in a file between runs.
     let store = FileStore::attach(&bridge, FileStore::default_path("hello-gain"));
 
-    let server = vst3_web_stratum::serve(&bridge, ServerConfig::default().prefer_port(4250).assets_dir("web/dist")).expect("serve");
+    let server = noob_vst_webgui_framework::serve(&bridge, ServerConfig::default().prefer_port(4250).assets_dir("web/dist")).expect("serve");
     println!("open {}", server.url());
 
     // The host side: forward edits (a real host would record automation),
@@ -227,13 +227,13 @@ fn main() {
 
 Run it with `cargo run --bin standalone`, and
 until `web/dist` exists it serves a 404 for the page but the WebSocket is
-live: `node ../vst3-web-stratum/tools/bench.mjs 4250` already works.
+live: `node ../noob-vst-webgui-framework/tools/bench.mjs 4250` already works.
 
 ## 4. The page
 
 ### Vanilla, no build step
 
-The server embeds the client library at `/vst3-web-stratum/`, so the smallest page is
+The server embeds the client library at `/noob-vst-webgui-framework/`, so the smallest page is
 one HTML file in `web/dist`:
 
 ```html
@@ -241,10 +241,10 @@ one HTML file in `web/dist`:
 <meta charset="utf-8">
 <div id="gain"></div><div id="tone"></div><div id="meter" style="height:120px"></div>
 <script type="module">
-  import { Vst3WebStratumClient } from '/vst3-web-stratum/vst3-web-stratum.js';
-  import { Knob, Meter } from '/vst3-web-stratum/components/index.js';
+  import { NoobVstWebguiFrameworkClient } from '/noob-vst-webgui-framework/noob-vst-webgui-framework.js';
+  import { Knob, Meter } from '/noob-vst-webgui-framework/components/index.js';
 
-  const client = new Vst3WebStratumClient(null, { pingIntervalMs: 500 });
+  const client = new NoobVstWebguiFrameworkClient(null, { pingIntervalMs: 500 });
   client.on('manifest', () => {
     new Knob(document.getElementById('gain'), client.param('gain'), { size: 64 });
     new Knob(document.getElementById('tone'), client.param('tone'), { size: 64 });
@@ -257,13 +257,13 @@ one HTML file in `web/dist`:
 `format()`, `set(norm)`, `setPlain(v)`, `beginEdit()` / `endEdit()`, and
 `on(fn)` for changes from anywhere else. `client.stream(id).on(frame => …)`
 delivers each frame as a `Float32Array` view without copying.
-`crates/vst3-web-stratum/web/examples/vanilla/index.html` is a larger version of this page.
+`crates/noob-vst-webgui-framework/web/examples/vanilla/index.html` is a larger version of this page.
 
 ### Vue + Vite
 
 ```sh
 cd hello-gain && mkdir web && cd web && npm init -y
-npm install vue @elyerinfox/vst3-web-stratum@file:../../vst3-web-stratum/web
+npm install vue @noob-audio-engineering/noob-vst-webgui-framework@file:../../noob-vst-webgui-framework/web
 npm install -D vite @vitejs/plugin-vue tailwindcss @tailwindcss/vite
 ```
 
@@ -274,7 +274,7 @@ import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import tailwindcss from '@tailwindcss/vite';
 
-const serverPort = process.env.VST3_WEB_STRATUM_PORT || '4250';
+const serverPort = process.env.NOOB_VST_WEBGUI_FRAMEWORK_PORT || '4250';
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
   base: './',
@@ -299,7 +299,7 @@ export default defineConfig({
 // web/src/main.js
 import { createApp } from 'vue';
 import App from './App.vue';
-import './style.css';          // @import "tailwindcss"; @source "../../../vst3-web-stratum/web/vue";
+import './style.css';          // @import "tailwindcss"; @source "../../../noob-vst-webgui-framework/web/vue";
 createApp(App).mount('#app');
 ```
 
@@ -307,10 +307,10 @@ createApp(App).mount('#app');
 <!-- web/src/App.vue -->
 <script setup>
 import { onMounted, ref } from 'vue';
-import { Knob, useParam, useVst3WebStratum, useStream } from '@elyerinfox/vst3-web-stratum/vue';
-import { Meter } from '@elyerinfox/vst3-web-stratum/components';
+import { Knob, useParam, useNoobVstWebguiFramework, useStream } from '@noob-audio-engineering/noob-vst-webgui-framework/vue';
+import { Meter } from '@noob-audio-engineering/noob-vst-webgui-framework/components';
 
-const { ready, connected, stats, status } = useVst3WebStratum();
+const { ready, connected, stats, status } = useNoobVstWebguiFramework();
 const meterEl = ref(null);
 onMounted(() => new Meter(meterEl.value, useStream('meter'), { minDb: -60, maxDb: 6 }));
 </script>
@@ -328,20 +328,20 @@ onMounted(() => new Meter(meterEl.value, useStream('meter'), { minDb: -60, maxDb
 </template>
 ```
 
-`useVst3WebStratum()` gives you connection state, the manifest, statistics and the
+`useNoobVstWebguiFramework()` gives you connection state, the manifest, statistics and the
 undo history; `useParam(id)` returns a reactive handle (`plain`, `text`,
 `on`, `set`, `toggle`, `begin`, `end`, `reset`, …) that every component
 asking for the same id shares. Call it once `ready` is true.
 
 ```sh
-VST3_WEB_STRATUM_PORT=4250 npm run dev     # hot reload against the running standalone
+NOOB_VST_WEBGUI_FRAMEWORK_PORT=4250 npm run dev     # hot reload against the running standalone
 npm run build                     # writes web/dist for the standalone and the plug-in
 ```
 
 ## 5. The plug-in
 
 With nih-plug the host owns the parameters. The adapter mirrors them into
-vst3-web-stratum with the same ids, forwards gestures to the host on the GUI thread,
+noob-vst-webgui-framework with the same ids, forwards gestures to the host on the GUI thread,
 and persists the UI store in the plug-in state.
 
 ```rust
@@ -356,8 +356,8 @@ mod plugin {
 
     use include_dir::{Dir, include_dir};
     use nih_plug::prelude::*;
-    use vst3_web_stratum::{Assets, AudioHandle, Vst3WebStratum};
-    use vst3_web_stratum_nih::{EditorConfig, StoreSlot, Vst3WebStratumEditor};
+    use noob_vst_webgui_framework::{Assets, AudioHandle, NoobVstWebguiFramework};
+    use noob_vst_webgui_framework_nih::{EditorConfig, StoreSlot, NoobVstWebguiFrameworkEditor};
 
     use crate::engine::{self, Engine, Ix};
 
@@ -403,8 +403,8 @@ mod plugin {
 
     pub struct HelloGain {
         params: Arc<HelloParams>,
-        editor: Arc<Vst3WebStratumEditor>,
-        bridge: Vst3WebStratum,
+        editor: Arc<NoobVstWebguiFrameworkEditor>,
+        bridge: NoobVstWebguiFramework,
         audio: Option<AudioHandle>,
         ix: Ix,
         engine: Engine,
@@ -413,7 +413,7 @@ mod plugin {
     impl Default for HelloGain {
         fn default() -> Self {
             let params = Arc::new(HelloParams::default());
-            let (editor, bridge) = Vst3WebStratumEditor::with_builder(
+            let (editor, bridge) = NoobVstWebguiFrameworkEditor::with_builder(
                 "Hello Gain",
                 params.as_ref(),
                 engine::streams(48_000.0),
@@ -486,7 +486,7 @@ Notes on what the adapter does for you:
   formats and scales `tone` exactly like the host does, without knowing
   nih-plug's skew formula.
 * Values in `Engine::process` come from `audio.param(...)`, that is, from the
-  vst3-web-stratum mirror, which the adapter keeps in sync with the host through the
+  noob-vst-webgui-framework mirror, which the adapter keeps in sync with the host through the
   editor callbacks. If you prefer nih-plug's smoothed values, read
   `self.params.gain.smoothed` instead; both are correct, the mirror is the
   one the page sees.
@@ -508,14 +508,14 @@ cargo build --release --features plugin
   curve, a wavetable) so a late window gets it at once.
 * **Events**: `AudioHandle::drain_events` / `send_event` carry notes and
   controllers in 12-byte records; `client.noteOn(note, velocity)` sends them.
-  The synth example wires an on-screen keyboard this way.
-* **Undo, redo, A/B**: `useVst3WebStratum().history` in Vue, `new History(client)`
+  Noob-Wave wires an on-screen keyboard this way.
+* **Undo, redo, A/B**: `useNoobVstWebguiFramework().history` in Vue, `new History(client)`
   in vanilla JS.
 * **Your own look**: `useKnobGesture` gives any SVG the drag, wheel and
   keyboard behaviour of a knob; `useNeedle` gives a meter face you draw the
   ballistics of a VU meter; `Segmented` and `Toggle` are unstyled controls;
   `Timeline` and `LinePlot` chart history and curves in your colours. The
-  compressor lab example is built that way.
+  Noob CompressorLab is built that way.
 * **Presets**: `stateToJson()` and `loadState(values)` snapshot and restore
   every parameter in one frame; keep user presets in `client.store`.
 * **Resize**: `useWindowSize` and the unstyled `ResizeGrip` from the Vue

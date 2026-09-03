@@ -1,5 +1,7 @@
-# Continuous integration: formatting, lints, tests, API docs, and the two
-# example SPAs (which the plug-in feature embeds).
+# Continuous integration: formatting, lints, tests, API docs, the browser
+# package's syntax and exports, and the nih-plug adapter in dev and release.
+# The plug-ins built on the framework live in their own repositories and run
+# their own CI against these crates from git.
 name: CI
 
 on:
@@ -18,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: System packages (wry, cpal, nih-plug)
+      - name: System packages (wry, nih-plug)
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -39,13 +41,13 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test -p vst3-web-stratum -p vst3-web-stratum-nih -p vst3-web-stratum-webview -p noob-q -p noob-wave -p noob-compressorlab
+        run: cargo test --workspace
 
       - name: Rustdoc
         run: cargo doc --no-deps --workspace --document-private-items
 
   web:
-    name: SPAs and plug-in feature
+    name: browser package and adapter
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,23 +56,23 @@ jobs:
         with:
           node-version: 22
 
-      - name: Build noob-q SPA
-        working-directory: examples/noob-q/web
-        run: npm install && npm run build
-
-      - name: Build noob-wave SPA
-        working-directory: examples/noob-wave/web
-        run: npm install && npm run build
-
-      - name: Build noob-compressorlab SPA
-        working-directory: examples/noob-compressorlab/web
-        run: npm install && npm run build
-
-      - name: Syntax-check the tools and the browser library
+      - name: Syntax-check the tools and the browser package
         run: |
-          for f in tools/*.mjs crates/vst3-web-stratum/web/vst3-web-stratum.js crates/vst3-web-stratum/web/components/*.js crates/vst3-web-stratum/web/vue/*.js; do node --check "$f"; done
+          for f in tools/*.mjs crates/noob-vst-webgui-framework/web/noob-vst-webgui-framework.js crates/noob-vst-webgui-framework/web/components/*.js crates/noob-vst-webgui-framework/web/vue/*.js; do node --check "$f"; done
 
-      - name: System packages (wry, cpal, nih-plug)
+      - name: Root package.json exports resolve (what a git install sees)
+        run: |
+          node --input-type=module -e "
+            import { accessSync, readFileSync } from 'node:fs';
+            const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+            for (const [key, target] of Object.entries(pkg.exports)) {
+              if (key.includes('*')) continue;
+              accessSync(target);
+              console.log(key, '->', target);
+            }
+          "
+
+      - name: System packages (wry, nih-plug)
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -81,7 +83,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - name: Plug-in feature (embeds web/dist)
+      - name: nih-plug adapter (dev, release, devtools)
         run: |
-          cargo check -p noob-q -p noob-wave -p noob-compressorlab --features plugin
-          cargo check -p noob-q -p noob-wave -p noob-compressorlab --features plugin --release
+          cargo check -p noob-vst-webgui-framework-nih
+          cargo check -p noob-vst-webgui-framework-nih --release
+          cargo check -p noob-vst-webgui-framework-nih --features devtools

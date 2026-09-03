@@ -1,21 +1,14 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/vst3-web-stratum",
-    "crates/vst3-web-stratum-webview",
-    "crates/vst3-web-stratum-nih",
-    "examples/noob-q",
-    "examples/noob-wave",
-    "examples/noob-compressorlab",
+    "crates/noob-vst-webgui-framework",
+    "crates/noob-vst-webgui-framework-webview",
+    "crates/noob-vst-webgui-framework-nih",
 ]
 # `cargo build` / `cargo test` at the root only touch these. The nih-plug
-# adapter and the `plugin` feature of the examples pull nih-plug from git and
-# are built explicitly (see README).
+# adapter pulls nih-plug from git and is built explicitly (see README).
 default-members = [
-    "crates/vst3-web-stratum",
-    "examples/noob-q",
-    "examples/noob-wave",
-    "examples/noob-compressorlab",
+    "crates/noob-vst-webgui-framework",
 ]
 
 [workspace.package]
@@ -23,13 +16,13 @@ version = "0.1.0"
 authors = ["Ely Erin Fox"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/elyerinfox/vst3-web-stratum"
-homepage = "https://github.com/elyerinfox/vst3-web-stratum"
+repository = "https://github.com/Noob-Audio-Engineering/noob-vst-webgui-framework"
+homepage = "https://github.com/Noob-Audio-Engineering/noob-vst-webgui-framework"
 
 [workspace.dependencies]
-vst3-web-stratum = { path = "crates/vst3-web-stratum" }
-vst3-web-stratum-webview = { path = "crates/vst3-web-stratum-webview" }
-vst3-web-stratum-nih = { path = "crates/vst3-web-stratum-nih" }
+noob-vst-webgui-framework = { path = "crates/noob-vst-webgui-framework" }
+noob-vst-webgui-framework-webview = { path = "crates/noob-vst-webgui-framework-webview" }
+noob-vst-webgui-framework-nih = { path = "crates/noob-vst-webgui-framework-nih" }
 nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git" }
 crossbeam-queue = "0.3"
 serde = { version = "1", features = ["derive"] }
@@ -44,4 +37,4 @@ lto = "thin"
 codegen-units = 1
 
 [patch."https://github.com/robbert-vdh/nih-plug.git"]
-nih_plug = { git = "https://github.com/elyerinfox/nih-plug.git", branch = "host-resize" }
+nih_plug = { git = "https://github.com/Noob-Audio-Engineering/nih-plug.git", branch = "host-resize" }

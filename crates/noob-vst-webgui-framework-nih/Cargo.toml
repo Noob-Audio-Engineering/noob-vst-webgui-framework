@@ -1,0 +1,25 @@
+[package]
+name = "noob-vst-webgui-framework-nih"
+description = "nih-plug Editor adapter for bridge: a VST3/CLAP plugin editor that is the OS web view, rendering a page served by the plugin"
+readme = "README.md"
+documentation = "https://noob-audio-engineering.github.io/noob-vst-webgui-framework/noob_vst_webgui_framework_nih/"
+keywords = ["audio", "plugin", "vst3", "clap", "nih-plug"]
+categories = ["multimedia::audio", "gui"]
+# nih-plug is a git dependency, which crates.io does not accept.
+publish = false
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+# Developer tools in release builds; see noob-vst-webgui-framework-webview.
+devtools = ["noob-vst-webgui-framework-webview/devtools"]
+
+[dependencies]
+noob-vst-webgui-framework.workspace = true
+noob-vst-webgui-framework-webview.workspace = true
+nih_plug.workspace = true
+serde_json.workspace = true
+log.workspace = true

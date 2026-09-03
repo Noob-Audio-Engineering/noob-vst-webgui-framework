@@ -1,9 +1,8 @@
 # Publish the Rust API documentation of the FRAMEWORK crates to GitHub Pages
-# on every push to main: vst3-web-stratum, vst3-web-stratum-nih, vst3-web-stratum-webview.
+# on every push to main: noob-vst-webgui-framework, noob-vst-webgui-framework-nih, noob-vst-webgui-framework-webview.
 #
-# The example crates under examples/ (noob-q, noob-wave) are not published
-# anywhere: not here, not to crates.io (publish = false), not to npm
-# (private). They are built and tested by ci.yml only.
+# The plug-ins built on the framework live in their own repositories under
+# https://github.com/Noob-Audio-Engineering and publish nothing here.
 #
 # Requires: repository Settings → Pages → Source: "GitHub Actions".
 name: Docs
@@ -42,19 +41,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build rustdoc for the framework crates only
-        run: cargo doc --no-deps -p vst3-web-stratum -p vst3-web-stratum-nih -p vst3-web-stratum-webview
+        run: cargo doc --no-deps -p noob-vst-webgui-framework -p noob-vst-webgui-framework-nih -p noob-vst-webgui-framework-webview
 
       - name: Add a root index
         run: |
           cat > target/doc/index.html <<'EOF'
           <!doctype html>
           <meta charset="utf-8">
-          <meta http-equiv="refresh" content="0; url=vst3_web_stratum/index.html">
-          <title>vst3-web-stratum API docs</title>
-          <p>Redirecting to <a href="vst3_web_stratum/index.html">vst3_web_stratum</a>.
-          Framework crates: <a href="vst3_web_stratum/index.html">vst3_web_stratum</a>,
-          <a href="vst3_web_stratum_nih/index.html">vst3_web_stratum_nih</a>,
-          <a href="vst3_web_stratum_webview/index.html">vst3_web_stratum_webview</a>.</p>
+          <meta http-equiv="refresh" content="0; url=noob_vst_webgui_framework/index.html">
+          <title>noob-vst-webgui-framework API docs</title>
+          <p>Redirecting to <a href="noob_vst_webgui_framework/index.html">noob_vst_webgui_framework</a>.
+          Framework crates: <a href="noob_vst_webgui_framework/index.html">noob_vst_webgui_framework</a>,
+          <a href="noob_vst_webgui_framework_nih/index.html">noob_vst_webgui_framework_nih</a>,
+          <a href="noob_vst_webgui_framework_webview/index.html">noob_vst_webgui_framework_webview</a>.</p>
           EOF
           touch target/doc/.nojekyll
 

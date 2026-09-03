@@ -1,6 +1,6 @@
 # Tools
 
-Four Node scripts in `tools/` talk to a running vst3-web-stratum server over its
+Four Node scripts in `tools/` talk to a running noob-vst-webgui-framework server over its
 WebSocket or HTTP endpoints. They need Node 20 or newer (they use the global
 `WebSocket` and `fetch`) and nothing else; there is no `npm install` step.
 
@@ -16,7 +16,7 @@ node tools/instances.mjs --json     # machine-readable
 ```
 
 ```
-discovery: C:\Users\you\AppData\Local\vst3-web-stratum\instances
+discovery: C:\Users\you\AppData\Local\noob-vst-webgui-framework\instances
 name       pid     port   url
 noob-q     34080   4242   http://127.0.0.1:4242/
 noob-wave  39288   4243   http://127.0.0.1:4243/
@@ -112,5 +112,5 @@ ws.onmessage = (ev) => {
 ```
 
 Frame layouts are in [WIRE.md](WIRE.md). For anything beyond a few lines,
-import `@elyerinfox/vst3-web-stratum` (`crates/vst3-web-stratum/web/vst3-web-stratum.js`) instead: it runs unchanged in Node
+import `@noob-audio-engineering/noob-vst-webgui-framework` (`crates/noob-vst-webgui-framework/web/noob-vst-webgui-framework.js`) instead: it runs unchanged in Node
 20+ and gives you `Param`, `Stream` and `Store` handles.
