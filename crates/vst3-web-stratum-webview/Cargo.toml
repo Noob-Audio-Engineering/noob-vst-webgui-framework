@@ -1,0 +1,24 @@
+[package]
+name = "vst3-web-stratum-webview"
+description = "Embed the operating system's web view (WebView2 / WKWebView / WebKitGTK) inside a host-provided plugin window"
+readme = "README.md"
+documentation = "https://elyerinfox.github.io/vst3-web-stratum/vst3_web_stratum_webview/"
+keywords = ["webview", "wry", "plugin", "audio", "gui"]
+categories = ["gui", "multimedia::audio"]
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+# Developer tools in release builds (`open_devtools`); debug builds always have them.
+devtools = ["wry/devtools"]
+
+[dependencies]
+log.workspace = true
+raw-window-handle = "0.6"
+wry = { version = "0.53", default-features = false, features = ["os-webview"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

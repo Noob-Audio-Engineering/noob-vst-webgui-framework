@@ -1,0 +1,214 @@
+<!doctype html>
+<!--
+  bridge · vanilla example
+
+  The smallest complete UI for a bridge plug-in: one HTML file, no
+  framework, no bundler. It talks to the Noob-Q engine (24-band EQ), shows
+  the first four bands with knobs, an interactive EQ curve over a live
+  spectrum, and an output meter.
+
+  How to run it:
+    1. Build and start the standalone with this folder as its web root:
+         cargo run -p noob-q --bin noob-q-standalone -- --dir web
+    2. Open http://127.0.0.1:4242/examples/vanilla/
+
+  The server serves `web/` statically, so the imports below resolve to
+  `crates/vst3-web-stratum/web/vst3-web-stratum.js` (the client) and `crates/vst3-web-stratum/web/components/index.js` (the canvas
+  components). Every bridge server also exposes the same client library at
+  `/vst3-web-stratum/vst3-web-stratum.js` and `/vst3-web-stratum/components/index.js`, which is what a
+  plug-in that embeds its own page would import.
+
+  What to look for:
+    - `Vst3WebStratumClient`: connects, reconnects, decodes the binary frames.
+    - `client.param(id)`: a live parameter; `.on()` follows the plug-in,
+      `.set()` sends a gesture back.
+    - `client.stream(id)`: telemetry frames as Float32Array, zero-copy.
+    - The components (Knob, Spectrum, EqCurve, Meter) take a container
+      element plus a Param / Stream and draw themselves.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bridge · vanilla example</title>
+<style>
+  /* Theme. The `--vst3-web-stratum-*` variables are read by the components (knob
+     arc, meter track, spectrum grid); the rest style this page only. */
+  :root { --bg: #101216; --panel: #171a20; --line: rgba(255,255,255,.07); --vst3-web-stratum-text: #e8eaee;
+    --vst3-web-stratum-accent: #5ac8fa; --vst3-web-stratum-track: rgba(255,255,255,.12); --dim: rgba(255,255,255,.45); --ok: #3ddc84; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--vst3-web-stratum-text); font: 13px/1.4 system-ui, sans-serif; }
+  /* Layout: header across the top, analyzer + meters in the middle row, band strips below. */
+  body { padding: 14px; display: grid; gap: 12px; grid-template-columns: 1fr 96px; grid-template-rows: auto 300px auto;
+    grid-template-areas: "head head" "analyzer meters" "bands bands"; max-width: 1100px; margin: 0 auto; }
+  header { grid-area: head; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header h1 span { color: var(--dim); font-weight: 400; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #ff5c5c; display: inline-block; margin-right: 6px; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+  .stats { display: flex; gap: 14px; margin-left: auto; font-variant-numeric: tabular-nums; color: var(--dim); }
+  .stats b { color: var(--vst3-web-stratum-text); font-weight: 500; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+  /* The analyzer stacks two canvases: the spectrum underneath (no pointer
+     events) and the EQ curve on top, which owns the mouse. */
+  .analyzer { grid-area: analyzer; position: relative; padding: 0; overflow: hidden; }
+  .analyzer .layer { position: absolute; inset: 0; }
+  .analyzer .spec { pointer-events: none; }
+  .meters { grid-area: meters; display: flex; flex-direction: column; gap: 6px; }
+  .meters .bars { flex: 1; min-height: 0; }
+  .meters .lbl { text-align: center; color: var(--dim); font-size: 11px; text-transform: uppercase; }
+  .bands { grid-area: bands; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .band { background: #1d2129; border-radius: 8px; padding: 8px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; justify-items: center; }
+  .band .top { grid-column: 1 / -1; display: flex; width: 100%; align-items: center; gap: 6px; }
+  .band .name { font-weight: 600; font-size: 12px; }
+  .band select { margin-left: auto; }
+  select, button { background: #262b35; color: var(--vst3-web-stratum-text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 12px; cursor: pointer; }
+  button.toggle.on { background: var(--vst3-web-stratum-accent); color: #08131a; border-color: transparent; font-weight: 600; }
+  footer { grid-column: 1 / -1; color: var(--dim); font-size: 11px; }
+</style>
+</head>
+<body>
+<header>
+  <!-- The dot turns green on 'open' and red on 'close'; the numbers come from client.stats. -->
+  <h1><span class="dot" id="dot"></span>bridge <span>· vanilla JS example on the Noob-Q engine, no framework, no build step</span></h1>
+  <div class="stats">
+    <span>edit→echo <b id="echo">–</b></span>
+    <span>rtt <b id="rtt">–</b></span>
+    <span>frames/s <b id="fps">–</b></span>
+  </div>
+</header>
+
+<!-- Containers the components draw into. They are empty until the manifest arrives. -->
+<section class="panel analyzer">
+  <div class="layer spec" id="spec"></div>
+  <div class="layer" id="eq"></div>
+</section>
+
+<aside class="panel meters">
+  <div class="lbl">Out</div>
+  <div class="bars" id="meter"></div>
+</aside>
+
+<!-- One strip per band, built in build() below. -->
+<section class="bands" id="bands"></section>
+
+<footer>Serve this folder with <code>noob-q-standalone --dir web</code> and open <code>/examples/vanilla/</code>. Drag knobs (Shift = fine, double-click = reset), drag the numbered nodes, scroll a node for Q.</footer>
+
+<script type="module">
+  // Step 1: the client library and the canvas components. In a plug-in
+  // page these would be '/vst3-web-stratum/vst3-web-stratum.js' and '/vst3-web-stratum/components/index.js'.
+  import { Vst3WebStratumClient } from '../../vst3-web-stratum.js';
+  import { Knob, Meter, Spectrum, EqCurve } from '../../components/index.js';
+
+  const $ = (id) => document.getElementById(id);
+
+  // Step 2: connect. `null` means "the /ws endpoint of the page's own
+  // origin" (or 127.0.0.1:<port> if the page URL has ?port=). Pings every
+  // 500 ms keep the round-trip figure in the header fresh. The client
+  // reconnects on its own if the standalone is restarted.
+  const client = new Vst3WebStratumClient(null, { pingIntervalMs: 500 });
+  client.on('open', () => $('dot').classList.add('on'));
+  client.on('close', () => $('dot').classList.remove('on'));
+
+  // Latency readout: edit→echo is measured from set() to the server's echo of
+  // that value; rtt from ping/pong. Values under a millisecond show as µs.
+  const fmt = (ms) => (Number.isNaN(ms) ? '–' : ms < 1 ? `${(ms * 1000).toFixed(0)} µs` : `${ms.toFixed(2)} ms`);
+  setInterval(() => {
+    $('echo').textContent = fmt(client.stats.echoAvgMs);
+    $('rtt').textContent = fmt(client.stats.rttAvgMs);
+    $('fps').textContent = client.stats.fps.toFixed(0);
+  }, 250);
+
+  // Step 3: build the UI once the manifest (parameter and stream list) is
+  // here. 'manifest' fires again after every reconnect; the Param and
+  // Stream objects are reused then, so building once is enough.
+  let built = false;
+  client.on('manifest', () => { if (!built) { built = true; build(); } });
+
+  // Small helpers that bind a control to a parameter both ways: `p.on()`
+  // keeps the control in sync with the plug-in (and any other window), the
+  // control's own events call `p.set()`.
+  const knob = (parent, id, opts = {}) => new Knob(parent, client.param(id), { size: 58, ...opts });
+  function toggle(parent, id, label) {
+    const p = client.param(id);
+    const b = document.createElement('button');
+    b.className = 'toggle';
+    b.textContent = label ?? p.name;
+    const sync = () => b.classList.toggle('on', p.value >= 0.5);
+    b.onclick = () => p.set(p.value >= 0.5 ? 0 : 1);
+    p.on(sync); sync();
+    parent.appendChild(b);
+  }
+  // An enumeration parameter: the manifest carries one label per step, and
+  // the normalized value is the step index divided by (steps - 1).
+  function select(parent, id) {
+    const p = client.param(id);
+    const sel = document.createElement('select');
+    p.spec.labels.forEach((l, i) => { const o = document.createElement('option'); o.value = i; o.textContent = l; sel.appendChild(o); });
+    const last = p.spec.steps - 1;
+    const sync = () => (sel.value = String(Math.round(p.value * last)));
+    sel.onchange = () => p.set(Number(sel.value) / last);
+    p.on(sync); sync();
+    parent.appendChild(sel);
+  }
+
+  function build() {
+    // Stream metadata comes from the plug-in; the sample rate sets the
+    // frequency axis of the curve.
+    const sr = client.manifest.meta.sample_rate || 48000;
+    const N = 4; // the first four of the engine's 24 bands
+
+    // The spectrum draws each frame of the 'spectrum_post' stream (dB per
+    // FFT bin). The 4.5 dB/oct tilt makes pink noise look flat.
+    new Spectrum($('spec'), client.stream('spectrum_post'), { minDb: -96, maxDb: 12, minHz: 10, maxHz: 30000, slopeDbPerOct: 4.5, grid: false });
+
+    // The EQ curve wants a Param per band property; it reads them on every
+    // draw and writes them back when you drag a node.
+    const bands = Array.from({ length: N }, (_, i) => {
+      const n = i + 1;
+      return {
+        type: client.param(`b${n}_shape`), freq: client.param(`b${n}_freq`), gain: client.param(`b${n}_gain`),
+        q: client.param(`b${n}_q`), slope: client.param(`b${n}_slope`), placement: client.param(`b${n}_place`),
+        enabled: client.param(`b${n}_on`), dynOn: client.param(`b${n}_dyn_on`), dynRange: client.param(`b${n}_dyn_range`),
+      };
+    });
+    // Double-clicking empty space asks for a new band: pick the first
+    // disabled one and set shape, frequency, gain and enable in ONE frame
+    // with setMany, so the host sees a single undoable change.
+    new EqCurve($('eq'), { sampleRate: sr, minHz: 10, maxHz: 30000, rangeDb: 12, bands, gainQ: client.param('gain_q'),
+      onCreateBand: ({ type, freq, db }) => {
+        const free = bands.findIndex((b) => b.enabled.value < 0.5);
+        if (free < 0) return null;
+        const shape = { peak: 0, lowshelf: 1, highpass: 2, highshelf: 3, lowpass: 4, notch: 5 }[type] ?? 0;
+        const b = bands[free];
+        client.setMany([[b.type, b.type.toNorm(shape)], [b.freq, b.freq.toNorm(freq)], [b.gain, b.gain.toNorm(db)], [b.enabled, 1]]);
+        return free;
+      } });
+
+    // Output meter: two values per frame (L, R) in dBFS.
+    new Meter($('meter'), client.stream('meter_out'), { minDb: -60, maxDb: 6 });
+
+    // One strip per band: on/off, shape, and three knobs. Parameter ids
+    // follow the plug-in's naming (`b1_freq`, `b1_gain`, ...).
+    const bandsEl = $('bands');
+    for (let n = 1; n <= N; n++) {
+      const el = document.createElement('div');
+      el.className = 'band';
+      const top = document.createElement('div');
+      top.className = 'top';
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = `Band ${n}`;
+      top.appendChild(name);
+      toggle(top, `b${n}_on`, 'On');
+      select(top, `b${n}_shape`);
+      el.appendChild(top);
+      knob(el, `b${n}_freq`);
+      knob(el, `b${n}_gain`);
+      knob(el, `b${n}_q`);
+      bandsEl.appendChild(el);
+    }
+  }
+</script>
+</body>
+</html>

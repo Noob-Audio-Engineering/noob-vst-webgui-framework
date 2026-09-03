@@ -1,0 +1,39 @@
+{
+  "name": "@elyerinfox/vst3-web-stratum",
+  "version": "0.1.0",
+  "description": "Browser client for a vst3-web-stratum-bridged audio plugin: binary WebSocket protocol, live parameters, telemetry streams, events, and dependency-free knob / meter / spectrum / EQ-curve / scope / keyboard / wavetable / envelope components, plus an optional Vue 3 layer.",
+  "type": "module",
+  "author": "Ely Erin Fox",
+  "license": "MIT OR Apache-2.0",
+  "main": "./vst3-web-stratum.js",
+  "exports": {
+    ".": "./vst3-web-stratum.js",
+    "./components": "./components/index.js",
+    "./components/*": "./components/*.js",
+    "./vue": "./vue/index.js",
+    "./vue/*": "./vue/*"
+  },
+  "files": [
+    "vst3-web-stratum.js",
+    "components/",
+    "vue/"
+  ],
+  "sideEffects": false,
+  "peerDependencies": {
+    "vue": ">=3.4"
+  },
+  "peerDependenciesMeta": {
+    "vue": {
+      "optional": true
+    }
+  },
+  "homepage": "https://github.com/elyerinfox/vst3-web-stratum#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elyerinfox/vst3-web-stratum.git",
+    "directory": "crates/vst3-web-stratum/web"
+  },
+  "bugs": {
+    "url": "https://github.com/elyerinfox/vst3-web-stratum/issues"
+  }
+}

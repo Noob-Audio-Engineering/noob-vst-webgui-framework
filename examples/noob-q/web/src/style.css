@@ -1,0 +1,70 @@
+/*
+ * Noob-Q styling. Tailwind v4 is configured in CSS: `@import 'tailwindcss'`
+ * pulls in the framework, `@theme` declares the design tokens, and the rest
+ * are the few global rules the SPA needs. Components use utility classes in
+ * their templates; the handful of repeated button styles are `@apply`ed in
+ * scoped `<style>` blocks, which must start with `@reference '../style.css'`
+ * so Tailwind can resolve the tokens and utilities inside that isolated
+ * block (without it, `bg-ink-900` and friends are unknown there).
+ */
+@import 'tailwindcss';
+/*
+ * Tailwind scans only this app's sources by default. The shared Vue
+ * components (Knob, Popover, ContextMenu, LevelMeter) live in the linked
+ * `@elyerinfox/vst3-web-stratum` package at the repo root and use utility classes too, so
+ * their directory is added as a content source; otherwise those classes
+ * would be missing from the build.
+ */
+@source '../../../../crates/vst3-web-stratum/web/vue';
+
+/*
+ * Design tokens. `ink-*` is the near-black blue palette for every surface
+ * (950 = page, 900 = bars, 800 = floating panels, 700 = inputs and menus,
+ * 600 = hover / borders); `accent` is the sky blue used for selection, the
+ * post-EQ spectrum and the frequency-hover line, `accent-soft` its lighter
+ * variant. Tailwind turns every `--color-*` into utilities such as
+ * `bg-ink-900`, `text-accent`, `border-accent/40`.
+ */
+@theme {
+  --color-ink-950: #0d1016;
+  --color-ink-900: #12161e;
+  --color-ink-800: #181d27;
+  --color-ink-700: #212837;
+  --color-ink-600: #2c3546;
+  --color-accent: #58c4ff;
+  --color-accent-soft: #9ad9ff;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+/* Full-height app shell: the layout is flex-driven and nothing scrolls. */
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  /* Knob and band drags must never scroll or pinch-zoom the page on touch screens. */
+  touch-action: none;
+}
+
+/*
+ * The framework's vanilla components (spectrum, EQ curve, meters, knob
+ * canvases) carry no Tailwind classes; they read these custom properties,
+ * so the app's palette reaches them without a build-time dependency. Any
+ * `--vst3-web-stratum-*` variable not set here falls back to the component default.
+ */
+:root {
+  --vst3-web-stratum-accent: var(--color-accent);
+  --vst3-web-stratum-text: #e2e8f0;
+  --vst3-web-stratum-track: rgba(255, 255, 255, 0.12);
+  --vst3-web-stratum-grid: rgba(255, 255, 255, 0.06);
+  --vst3-web-stratum-grid-strong: rgba(255, 255, 255, 0.16);
+  --vst3-web-stratum-text-dim: rgba(226, 232, 240, 0.4);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

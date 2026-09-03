@@ -1,0 +1,14 @@
+# Rust
+/target
+
+# Node (each SPA and the shared library)
+node_modules/
+examples/*/web/dist/
+*.log
+npm-debug.log*
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

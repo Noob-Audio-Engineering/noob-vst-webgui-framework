@@ -1,0 +1,83 @@
+# Continuous integration: formatting, lints, tests, API docs, and the two
+# example SPAs (which the plug-in feature embeds).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  rust:
+    name: fmt, clippy, test, doc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System packages (wry, cpal, nih-plug)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev libasound2-dev \
+            libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
+            libgl1-mesa-dev libjack-jackd2-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test -p vst3-web-stratum -p vst3-web-stratum-nih -p vst3-web-stratum-webview -p noob-q -p noob-wave
+
+      - name: Rustdoc
+        run: cargo doc --no-deps --workspace --document-private-items
+
+  web:
+    name: SPAs and plug-in feature
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build noob-q SPA
+        working-directory: examples/noob-q/web
+        run: npm install && npm run build
+
+      - name: Build noob-wave SPA
+        working-directory: examples/noob-wave/web
+        run: npm install && npm run build
+
+      - name: Syntax-check the tools and the browser library
+        run: |
+          for f in tools/*.mjs crates/vst3-web-stratum/web/vst3-web-stratum.js crates/vst3-web-stratum/web/components/*.js crates/vst3-web-stratum/web/vue/*.js; do node --check "$f"; done
+
+      - name: System packages (wry, cpal, nih-plug)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev libasound2-dev \
+            libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
+            libgl1-mesa-dev libjack-jackd2-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Plug-in feature (embeds web/dist)
+        run: |
+          cargo check -p noob-q -p noob-wave --features plugin
+          cargo check -p noob-q -p noob-wave --features plugin --release

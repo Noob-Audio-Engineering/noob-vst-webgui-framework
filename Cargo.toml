@@ -1,0 +1,38 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/vst3-web-stratum",
+    "crates/vst3-web-stratum-webview",
+    "crates/vst3-web-stratum-nih",
+    "examples/noob-q",
+    "examples/noob-wave",
+]
+# `cargo build` / `cargo test` at the root only touch these. The nih-plug
+# adapter and the `plugin` feature of the examples pull nih-plug from git and
+# are built explicitly (see README).
+default-members = ["crates/vst3-web-stratum", "examples/noob-q", "examples/noob-wave"]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Ely Erin Fox"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/elyerinfox/vst3-web-stratum"
+homepage = "https://github.com/elyerinfox/vst3-web-stratum"
+
+[workspace.dependencies]
+vst3-web-stratum = { path = "crates/vst3-web-stratum" }
+vst3-web-stratum-webview = { path = "crates/vst3-web-stratum-webview" }
+vst3-web-stratum-nih = { path = "crates/vst3-web-stratum-nih" }
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git" }
+crossbeam-queue = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+tokio = { version = "1", features = ["rt", "net", "sync", "time", "macros", "io-util", "fs"] }
+axum = { version = "0.8", default-features = false, features = ["ws", "http1", "tokio"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
