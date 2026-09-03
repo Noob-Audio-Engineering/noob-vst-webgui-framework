@@ -458,15 +458,16 @@ new Timeline(el, {
 | `seconds`     | `6`     | history shown; "now" is the right edge |
 | `maxRate`     | `240`   | samples per second kept per series (faster streams are thinned) |
 | `grid`, `gridSeries`, `gridStep` | `true`, `0`, `12` | horizontal grid for one series' range |
-| `timeTicks`, `legend` | `true` | one tick per second; labels top-right |
+| `timeTicks`, `legend` | `true` | one tick per second at the bottom; labels top-right |
+| `timeGrid`    | `false` | run each second's mark the whole height instead of a stub at the bottom |
 | `background`  | `'transparent'` | fill behind the chart |
 | `gridColor`, `textColor` | CSS variables | `--noob-vst-webgui-framework-grid`, `--noob-vst-webgui-framework-text-dim` |
 
 Each series maps its own `range` onto the full height. **Methods:** `push(series, value)` for series without a stream, `destroy()`. Runs an animation loop.
 
-### Peak labels
+### Peaks
 
-A series can name the moments it peaked, so the chart says how deep the worst of them went without the reader tracing the scale. Set `peaks` on that series; it is off by default and costs nothing when off.
+A series can mark the moments it peaked and name their values in callout boxes, so the chart says how deep the worst of them went without the reader tracing the scale. They are drawn faintly so as not to shout, and come to full strength while the pointer is over the chart. Set `peaks` on that series; it is off by default and costs nothing when off.
 
 ```js
 {
@@ -481,11 +482,14 @@ A series can name the moments it peaked, so the chart says how deep the worst of
 | `direction`  | `'max'` | which extreme counts; `'min'` for a value that falls, such as a gain reduction |
 | `threshold`  | none    | ignore peaks that never get past this value, in the series' unit |
 | `hysteresis` | `1`     | how far the value must come back from a candidate before it counts as a peak |
-| `minGapMs`   | `350`   | closest two labels may sit in time; a peak inside that window replaces the weaker one |
-| `max`        | `4`     | most labels drawn at once, the most significant first |
-| `format`     | one decimal | label text |
+| `minGapMs`   | `350`   | closest two peaks may sit in time; a peak inside that window replaces the weaker one |
+| `max`        | `4`     | most peaks marked at once, the most significant first |
+| `dimOpacity` | `0.4`   | how faint the peaks are while the pointer is off the chart; `1` keeps them bright always |
+| `format`     | one decimal | label text for the value |
 
-Peaks are found as samples arrive, not by scanning at draw time, so a label marks a genuine local extreme rather than whichever sample happened to be lowest. Each belongs to a moment, so it scrolls left with its peak and leaves the chart with it. The label takes the series' own colour and sits clear of its fill, below the line for a falling series and above for a rising one; everything else about how it reads is the caller's `format`.
+Peaks are found as samples arrive, not by scanning at draw time, so one marks a genuine local extreme rather than whichever sample happened to be lowest. Each belongs to a moment, so it scrolls left and leaves the chart with it.
+
+Each peak is a dot with its value in a callout box, the box's pointer aiming back at the dot it belongs to, drawn as one path so the outline has no seam. The box sits clear of the series' fill, below the line for a falling series and above for a rising one, and flips to the other side when there is no room. The whole set is drawn at `dimOpacity` and comes to full strength while the pointer is anywhere over the chart, which costs one boolean rather than any hit-testing. The dot, the box and its text take the series' own colour, the box sits on `--noob-vst-webgui-framework-panel`, and how the value reads is the caller's `format`.
 
 ---
 

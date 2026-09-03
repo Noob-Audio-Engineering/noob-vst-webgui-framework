@@ -27,21 +27,31 @@
  * `devicePixelRatio`. Colours default to the `--noob-vst-webgui-framework-*`
  * variables (`grid`, `text`) when set on the container.
  *
- * ## Peak labels
+ * ## Peaks
  *
- * A series may name the moments it peaked, so a glance at the chart says how
- * deep the worst of them went without reading the scale. Set `peaks` on the
- * series (see `TimelinePeaks`); it is off by default and costs nothing when
- * off. Peaks are found as samples arrive rather than by scanning at draw
- * time: a candidate is held while the value keeps going the right way and is
- * confirmed once the value retreats by `hysteresis`, so a label marks a
- * genuine local extreme rather than whichever sample happened to be lowest.
- * Two labels are kept at least `minGapMs` apart, the stronger winning, and
- * only the `max` most significant inside the window are drawn. Each label
- * belongs to a moment, so it scrolls left with its peak and leaves with it.
+ * A series may mark the moments it peaked, so the chart says where the worst
+ * of them were and, on hover, how deep they went. Set `peaks` on the series
+ * (see `TimelinePeaks`); it is off by default and costs nothing when off.
  *
- * The label takes the series' own colour and the caller's `format`, so the
- * component decides nothing about how it reads.
+ * Peaks are found as samples arrive rather than by scanning at draw time: a
+ * candidate is held while the value keeps going the right way and confirmed
+ * once the value retreats by `hysteresis`, so a peak is a genuine local
+ * extreme rather than whichever sample happened to be lowest. Two are kept
+ * at least `minGapMs` apart, the stronger winning, and only the `max` most
+ * significant inside the window are marked. Each belongs to a moment, so its
+ * dot scrolls left and leaves the chart with it.
+ *
+ * Each marked peak is a small dot with its value in a callout box beside it,
+ * a pointer on the box aiming back at the dot it belongs to. The whole set
+ * is drawn faintly at `dimOpacity`, so a chart watched from across the room
+ * is not shouted at, and comes to full strength while the pointer is
+ * anywhere over the chart: reading the numbers is a deliberate act, and
+ * pointing at the chart is what makes it one.
+ *
+ * The dot, the box and its text take the series' own colour and the caller's
+ * `format`, so the component decides nothing about how the value reads; the
+ * box sits on `--noob-vst-webgui-framework-panel` so the text stays legible
+ * over the traces.
  *
  * @example
  * new Timeline(el, {
@@ -60,11 +70,12 @@
 /**
  * @typedef {object} TimelinePeaks
  * @property {'max'|'min'} [direction='max'] Which extreme is a peak: `'min'` for a value that falls, such as a gain reduction.
- * @property {number} [threshold] Ignore peaks that never get past this value, in the series' unit. Default: label them all.
+ * @property {number} [threshold] Ignore peaks that never get past this value, in the series' unit. Default: mark them all.
  * @property {number} [hysteresis=1] How far the value must come back from a candidate, in the series' unit, before it counts as a peak.
- * @property {number} [minGapMs=350] Closest two labels may sit in time; a peak inside that window replaces the weaker one.
- * @property {number} [max=4] Most labels drawn at once, the most significant first.
- * @property {(value:number)=>string} [format] Label text. Default: one decimal place.
+ * @property {number} [minGapMs=350] Closest two peaks may sit in time; a peak inside that window replaces the weaker one.
+ * @property {number} [max=4] Most peaks marked at once, the most significant first.
+ * @property {number} [dimOpacity=0.4] How faint the peaks are while the pointer is off the chart. `1` keeps them at full strength always.
+ * @property {(value:number)=>string} [format] Label text for the value. Default: one decimal place.
  */
 
 /**
@@ -105,6 +116,7 @@ export class Timeline {
    * @param {number} [opts.gridSeries=0] Which series' range the grid follows.
    * @param {number} [opts.gridStep=12] Grid spacing in that series' unit.
    * @param {boolean} [opts.timeTicks=true] One tick per second along the bottom.
+   * @param {boolean} [opts.timeGrid=false] One vertical line per second across the whole height, instead of the short ticks.
    * @param {boolean} [opts.legend=true] Draw series labels in the top-left corner.
    * @param {string} [opts.gridColor] Defaults to `--noob-vst-webgui-framework-grid` or `rgba(255,255,255,0.08)`.
    * @param {string} [opts.textColor] Defaults to `--noob-vst-webgui-framework-text-dim` or `rgba(255,255,255,0.45)`.
@@ -119,6 +131,7 @@ export class Timeline {
       gridSeries: 0,
       gridStep: 12,
       timeTicks: true,
+      timeGrid: false,
       legend: true,
       background: 'transparent',
       ...opts,
@@ -151,6 +164,25 @@ export class Timeline {
       _off: null,
     }));
     for (const s of this.series) this._initPeaks(s);
+    // Pointing at the chart brings the peaks to full strength, so a chart
+    // with no peaks listens to nothing.
+    this._ptrOn = false;
+    this._onPointerOver = null;
+    this._onPointerOut = null;
+    if (this.series.some((s) => s._pk)) {
+      this._onPointerOver = () => {
+        this._ptrOn = true;
+      };
+      this._onPointerOut = () => {
+        this._ptrOn = false;
+      };
+      // `pointermove` as well as `pointerenter`, so a pointer already resting
+      // on the chart when it appears is noticed.
+      c.addEventListener('pointerenter', this._onPointerOver);
+      c.addEventListener('pointermove', this._onPointerOver);
+      c.addEventListener('pointerleave', this._onPointerOut);
+      c.addEventListener('pointercancel', this._onPointerOut);
+    }
     const minGap = 1000 / this.opts.maxRate;
     this.series.forEach((s, i) => {
       if (!s.stream) return;
@@ -227,6 +259,7 @@ export class Timeline {
       // A value that never comes back (a sustained reduction) would hold a
       // candidate for ever, so commit one that has been held a whole window.
       holdMs: this.opts.seconds * 1000,
+      dimOpacity: Math.max(0, Math.min(1, p.dimOpacity ?? 0.4)),
       format: p.format || ((v) => v.toFixed(1)),
     };
     s._pkT = new Float64Array(cap);
@@ -295,6 +328,12 @@ export class Timeline {
     this._running = false;
     cancelAnimationFrame(this._raf);
     for (const s of this.series) s._off?.();
+    if (this._onPointerOver) {
+      this.canvas.removeEventListener('pointerenter', this._onPointerOver);
+      this.canvas.removeEventListener('pointermove', this._onPointerOver);
+      this.canvas.removeEventListener('pointerleave', this._onPointerOut);
+      this.canvas.removeEventListener('pointercancel', this._onPointerOut);
+    }
     this._ro.disconnect();
     this.canvas.remove();
   }
@@ -311,6 +350,8 @@ export class Timeline {
     this._colors = {
       grid: this.opts.gridColor || cssVar(el, '--noob-vst-webgui-framework-grid', 'rgba(255,255,255,0.08)'),
       text: this.opts.textColor || cssVar(el, '--noob-vst-webgui-framework-text-dim', 'rgba(255,255,255,0.45)'),
+      // Behind a peak's callout, so its value stays legible over the traces.
+      panel: cssVar(el, '--noob-vst-webgui-framework-panel', 'rgba(18,18,18,0.92)'),
     };
     return this._colors;
   }
@@ -361,12 +402,16 @@ export class Timeline {
         ctx.fillText(String(v), 3, y - 1);
       }
     }
-    if (this.opts.timeTicks) {
+    // One mark per second: a line across the chart, or a stub at the bottom.
+    // The line supersedes the stub, since they would sit on the same x.
+    if (this.opts.timeGrid || this.opts.timeTicks) {
+      const full = this.opts.timeGrid;
       ctx.strokeStyle = col.grid;
+      ctx.lineWidth = 1;
       for (let s = 1; s < this.opts.seconds; s++) {
         const x = Math.round(w - (s * 1000 * w) / span) + 0.5;
         ctx.beginPath();
-        ctx.moveTo(x, h - 6);
+        ctx.moveTo(x, full ? 0 : h - 6);
         ctx.lineTo(x, h);
         ctx.stroke();
       }
@@ -444,13 +489,16 @@ export class Timeline {
   }
 
   /**
-   * Name the most significant peaks still on screen, for every series that
-   * asked for it. Each label rides at its peak's own moment, so it scrolls
-   * left and leaves with it. Returns immediately for a chart where no series
-   * wants labels, and allocates nothing: the winners are chosen by insertion
-   * into the series' own fixed pick list.
+   * Mark the most significant peaks still on screen and name their values,
+   * for every series that asked for it. Each rides at its peak's own moment,
+   * so it scrolls left and leaves with it, and each is drawn faintly until
+   * the pointer comes near, which brings it to full strength. Returns
+   * immediately for a chart where no series wants peaks, and allocates
+   * nothing: the winners are chosen by insertion into the series' own fixed
+   * pick list, and the pointer is tracked in scalars.
    */
   _drawPeaks(ctx, now, span, w, h) {
+    const col = this._palette();
     for (const s of this.series) {
       const p = s._pk;
       if (!p || s._pkN === 0) continue;
@@ -473,28 +521,84 @@ export class Timeline {
       }
       if (picked === 0) continue;
 
-      // A falling series is drawn with its fill above the line, so its labels
-      // sit below the point, and the other way round for a rising one.
+      // A falling series carries its fill above the line, so its callouts sit
+      // below the point, and the other way round for a rising one.
       const below = sg < 0;
       ctx.font = LABEL_FONT;
-      ctx.fillStyle = s.color;
       ctx.textAlign = 'center';
-      ctx.textBaseline = below ? 'top' : 'bottom';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = this._ptrOn ? 1 : p.dimOpacity;
       for (let q = 0; q < picked; q++) {
         const j = s._pkPick[q];
+        const v = s._pkV[j];
         const x = w - ((now - s._pkT[j]) * w) / span;
-        const y = this._y(s, s._pkV[j]);
-        const text = p.format(s._pkV[j]);
-        const half = ctx.measureText(text).width / 2;
+        const y = this._y(s, v);
+        ctx.fillStyle = s.color;
         ctx.beginPath();
-        ctx.arc(x, y, 1.75, 0, Math.PI * 2);
+        ctx.arc(x, y, 2.25, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillText(
-          text,
-          Math.max(half + 2, Math.min(w - half - 2, x)),
-          below ? Math.min(h - 11, y + 5) : Math.max(1, y - 5),
-        );
+        this._callout(ctx, col, s, p.format(v), x, y, below, w, h);
       }
+      ctx.globalAlpha = 1;
     }
+  }
+
+  /**
+   * A peak's value in a small box whose pointer aims back at its dot. Drawn
+   * as one path so the outline has no seam where the pointer meets the box,
+   * and flipped to the other side of the dot when there is no room.
+   */
+  _callout(ctx, col, s, text, x, y, below, w, h) {
+    const padX = 5;
+    const bh = 15;
+    const r = 3;
+    const tail = 5; // how far the pointer reaches towards the dot
+    const tw = 3.5; // half the pointer's width where it meets the box
+    const bw = ctx.measureText(text).width + padX * 2;
+
+    // Below the dot by default; flip if the box would leave the chart.
+    let side = below;
+    if (side && y + tail + bh > h - 1) side = false;
+    else if (!side && y - tail - bh < 1) side = true;
+
+    const bx = Math.max(1, Math.min(w - bw - 1, x - bw / 2));
+    const by = side ? y + tail : y - tail - bh;
+    // The pointer follows the dot along the box's edge, but stays on the
+    // straight part of it rather than running into a rounded corner.
+    const tailX = Math.max(bx + r + tw, Math.min(bx + bw - r - tw, x));
+    const edge = side ? by : by + bh;
+
+    ctx.beginPath();
+    if (side) {
+      ctx.moveTo(bx + r, by);
+      ctx.lineTo(tailX - tw, edge);
+      ctx.lineTo(x, y);
+      ctx.lineTo(tailX + tw, edge);
+      ctx.lineTo(bx + bw - r, by);
+    } else {
+      ctx.moveTo(bx + r, by);
+      ctx.lineTo(bx + bw - r, by);
+    }
+    ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + r);
+    ctx.lineTo(bx + bw, by + bh - r);
+    ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - r, by + bh);
+    if (!side) {
+      ctx.lineTo(tailX + tw, edge);
+      ctx.lineTo(x, y);
+      ctx.lineTo(tailX - tw, edge);
+    }
+    ctx.lineTo(bx + r, by + bh);
+    ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - r);
+    ctx.lineTo(bx, by + r);
+    ctx.quadraticCurveTo(bx, by, bx + r, by);
+    ctx.closePath();
+
+    ctx.fillStyle = col.panel;
+    ctx.fill();
+    ctx.strokeStyle = s.color;
+    ctx.stroke();
+    ctx.fillStyle = s.color;
+    ctx.fillText(text, bx + bw / 2, by + bh / 2 + 0.5);
   }
 }

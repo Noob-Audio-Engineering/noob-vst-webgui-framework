@@ -15,12 +15,14 @@
  * Props:
  * - `series` (array, required): as the canvas component's series, except
  *   that `stream` is the stream **id** (a string), resolved on mount. That
- *   includes `peaks`, which names the moments a series peaked; see the
- *   components README.
+ *   includes `peaks`, which marks the moments a series peaked and names them
+ *   in callout boxes; see the components README.
  * - `seconds` (number, default 6): history shown.
  * - `gridSeries` (number, default 0), `gridStep` (number, default 12),
  *   `grid` (boolean, default true), `legend` (boolean, default true),
- *   `timeTicks` (boolean, default true): passed through.
+ *   `timeTicks` (boolean, default true), `timeGrid` (boolean, default
+ *   false): passed through. `timeGrid` runs each second's mark the whole
+ *   height instead of a stub at the bottom.
  *
  * Emits: nothing. Exposes `push(series, value)` for series without a stream.
  * Colours come from `--noob-vst-webgui-framework-grid` and
@@ -39,6 +41,7 @@ const props = defineProps({
   grid: { type: Boolean, default: true },
   legend: { type: Boolean, default: true },
   timeTicks: { type: Boolean, default: true },
+  timeGrid: { type: Boolean, default: false },
 });
 
 const el = ref(null);
@@ -51,6 +54,7 @@ onMounted(() => {
     grid: props.grid,
     legend: props.legend,
     timeTicks: props.timeTicks,
+    timeGrid: props.timeGrid,
     series: props.series.map((s) => ({ ...s, stream: s.stream ? useStream(s.stream) : undefined })),
   });
 });

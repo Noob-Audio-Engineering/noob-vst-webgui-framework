@@ -20,15 +20,23 @@ the workspace version in `Cargo.toml`.
 
 ### Added
 
-- `Timeline` series take a `peaks` option that names the moments a series
-  peaked, so a history chart says how deep the worst of them went without
-  the reader tracing the scale. Peaks are found as the samples arrive rather
-  than by scanning at draw time, so a label marks a genuine local extreme
-  and not whichever sample happened to be lowest, and each rides at its own
-  moment so it scrolls off the chart with its peak. Off by default,
-  allocating nothing and costing nothing when off; the label takes the
-  series' own colour and the caller's formatter, so the component decides
-  nothing about how it reads.
+- `Timeline` series take a `peaks` option that marks the moments a series
+  peaked and names their values, so a history chart says how deep the worst
+  of them went without the reader tracing the scale. Peaks are found as the
+  samples arrive rather than by scanning at draw time, so one marks a genuine
+  local extreme and not whichever sample happened to be lowest, and each
+  rides at its own moment so it scrolls off the chart with its peak. Each is
+  a dot with its value in a callout box whose pointer aims back at it, drawn
+  as one path so the outline has no seam and flipped to the other side of the
+  dot when there is no room. The set sits at `dimOpacity` so as not to shout
+  and comes to full strength while the pointer is over the chart. Off by
+  default, allocating nothing and costing nothing when off, down to adding no
+  pointer listeners; the dot, the box and its text take the series' own
+  colour and the caller's formatter, so the component decides nothing about
+  how the value reads.
+- `Timeline` takes `timeGrid`, which runs each second's mark the whole height
+  of the chart instead of a stub at the bottom, so peaks can be read against
+  the time axis.
 - The browser client keeps `manifest.meta.sample_rate` current from the
   plug-in's `sample_rate` message, as the Vue layer already did. A manifest
   is built before a plug-in knows its rate, so a page that read it once put
