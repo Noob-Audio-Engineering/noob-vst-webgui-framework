@@ -485,7 +485,17 @@ export class Param {
     if (s.steps === 2) return plain >= 0.5 ? 'On' : 'Off';
     const a = Math.abs(plain);
     let txt;
-    if (s.steps > 1) txt = String(Math.round(plain));
+    if (s.steps > 1) {
+      // A stepped parameter's step is `(max - min) / (steps - 1)`, and
+      // nothing requires that to be 1: half-decibel switches are ordinary
+      // hardware. Rounding to an integer renders two neighbouring detents
+      // as one string, so a host shows a value that does not change when
+      // the user steps it. Show enough decimals to tell the positions
+      // apart, capped at two. Every integer-stepped control is unaffected.
+      const step = Math.abs(s.max - s.min) / (s.steps - 1);
+      const decimals = step >= 1 ? 0 : step >= 0.1 ? 1 : 2;
+      txt = plain.toFixed(decimals);
+    }
     else if (a >= 1000 && s.unit) return `${(plain / 1000).toFixed(a >= 10000 ? 1 : 2)} k${s.unit}`;
     else if (a >= 1000) txt = plain.toFixed(0);
     else if (a >= 100) txt = plain.toFixed(0);

@@ -8,6 +8,13 @@ the workspace version in `Cargo.toml`.
 
 ### Fixed
 
+- A stepped parameter's displayed value is rounded to its own step rather
+  than to an integer. The step is `(max - min) / (steps - 1)` and nothing
+  requires that to be 1: a half-decibel switch is ordinary hardware, and two
+  neighbouring detents were rendering as the same string, so a host showed a
+  value that did not change when the user stepped it. Every integer-stepped
+  control renders exactly as before.
+
 - `EqCurve` cascaded a steep shelf as `n` identical sections carrying
   `gain/n`, which sums to one shelf of the full gain at no extra steepness,
   so a drawn shelf ignored its slope control. Sections now take the
