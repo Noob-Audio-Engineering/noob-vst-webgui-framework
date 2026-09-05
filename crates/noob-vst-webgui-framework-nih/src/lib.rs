@@ -799,10 +799,10 @@ impl Editor for EditorHandle {
                     {
                         match warn_url.as_deref() {
                             Some(u) => nih_log!(
-                                "bridge: no page has connected 8 s after the editor opened.                                  The plug-in is running and the server is up; only its window                                  is empty. Open {u} in a browser to see whether the page                                  itself is healthy."
+                                "bridge: no page has connected 8 s after the editor opened. The plug-in is running and the server is up; only its window is empty. Open {u} in a browser to see whether the page itself is healthy."
                             ),
                             None => nih_log!(
-                                "bridge: the editor opened with no server, so its window will                                  stay empty"
+                                "bridge: the editor opened with no server, so its window will stay empty"
                             ),
                         }
                     }
