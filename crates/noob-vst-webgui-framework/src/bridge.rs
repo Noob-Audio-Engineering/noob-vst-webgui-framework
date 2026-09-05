@@ -724,6 +724,28 @@ impl NoobVstWebguiFramework {
 
     /// Next ad-hoc JSON message from a client, oldest first, if any. Topics
     /// the server handles itself (`store.*`) never show up here.
+    ///
+    /// # Something has to call this, and in a plug-in nothing does
+    ///
+    /// This is a queue, not a callback. A standalone has a main loop to drain
+    /// it from; a plug-in has an audio thread and an editor thread and nothing
+    /// else, so a message sent from the page sits here for ever unless the
+    /// plug-in arranges to poll it. That makes this the worst shape of bug
+    /// available: a feature built on messages works perfectly against the
+    /// development server and silently does nothing inside the host, and every
+    /// test that can be run on the page's side passes.
+    ///
+    /// So before reaching for a message, ask whether the **UI store** will do
+    /// instead. [`set_store_hook`](Self::set_store_hook) fires on every client
+    /// write with no polling at all, the store is already persisted with the
+    /// plug-in state, and a value written there survives a reload with no
+    /// editor open. A plug-in that needs the page to hand it structured data
+    /// almost always wants that rather than this.
+    ///
+    /// Messages remain right for things that are genuinely transient and
+    /// genuinely have a reader — a standalone's own commands, or a layer that
+    /// polls deliberately and uses [`requeue_message`](Self::requeue_message)
+    /// to leave the rest alone.
     pub fn poll_message(&self) -> Option<Message> {
         self.shared.inbound_json.lock().ok()?.pop_front()
     }
