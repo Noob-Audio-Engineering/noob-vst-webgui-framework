@@ -518,6 +518,12 @@ Every series maps its own `range` onto the full height, so levels in dBFS and a 
 >
 > So fix the series at first render. If the set of series genuinely has to change, remount the chart
 > deliberately and know that you are doing it, rather than letting a reactive `:key` do it silently.
+>
+> **`LevelMeter` and `LinePlot` resolve their streams the same way**, so the same trap is set in three
+> components rather than one. Anything here that subscribes to a stream does it on mount and not
+> again; a component that appears later gets a subscription to nothing and renders its decorations
+> perfectly. If you are debugging a chart, a meter or a plot that draws its frame and no data, check
+> when it mounted before you check what the plug-in is publishing.
 
 **`LinePlot`** — XY curve chart (wrapper over the canvas `LinePlot`): transfer curves, responses, tables.
 
