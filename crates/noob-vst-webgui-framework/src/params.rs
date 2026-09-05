@@ -125,8 +125,17 @@ pub struct ParamSpec {
     /// adapters read it when registering the parameter with the host.
     /// Default `true`.
     pub automatable: bool,
-    /// How many decimal places the plain value is meaningful to, for
-    /// *display only*. `None` means "no opinion, show what you like".
+    /// How many decimal places the plain value is meaningful to. `None`
+    /// means "no opinion".
+    ///
+    /// **It states how exactly the value is known, not how it should look.**
+    /// That distinction decides more than formatting: a consumer that stores
+    /// the value --- into a preset, a slot, a saved project --- should store
+    /// it at this precision too, because at the stated precision
+    /// `7.0000000000000036` and `7` are the same number, and carrying the
+    /// difference carries a claim about precision that is not true. A page
+    /// that read this as a display hint fixed its knob text and then wrote
+    /// the raw float into a saved project, which is one fault treated as two.
     ///
     /// This exists because a count has no honest continuous rendering: a
     /// mode budget of 1,024 must not print as `1024.0`, and the two obvious
@@ -248,7 +257,7 @@ impl ParamSpec {
         self.automatable = false;
         self
     }
-    /// Say how many decimal places the plain value means, for display.
+    /// Say how many decimal places the plain value is meaningful to.
     ///
     /// `.decimals(0)` is the common case: a count, a mode budget, a number
     /// of voices --- something that should read `1024` and never `1024.0`.
