@@ -251,8 +251,8 @@ use std::time::Duration;
 use nih_plug::prelude::*;
 use noob_vst_webgui_framework::bridge::EditEvent;
 use noob_vst_webgui_framework::{
-    Assets, EditPhase, NoobVstWebguiFramework, ParamSpec, PortPolicy, ServerConfig, ServerHandle,
-    StreamSpec,
+    Assets, AudioHandle, EditPhase, NoobVstWebguiFramework, ParamSpec, PortPolicy, ServerConfig,
+    ServerHandle, StreamSpec,
 };
 use noob_vst_webgui_framework_webview::{
     EmbeddedWebView, RawParent, UiTimer, WebViewOptions, monitor_work_area,
@@ -1061,4 +1061,208 @@ impl StoreSlot {
             None => g.pending = Some(json),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// The plug-in skeleton
+// ---------------------------------------------------------------------------
+
+/// A [`Params`] object that owns a [`StoreSlot`].
+///
+/// The slot is how the page's own state — which tab is open, a preset name,
+/// the editor size — travels inside the plug-in state the host saves. Every
+/// plug-in on this framework has one, and every one wired it by hand until
+/// this trait existed.
+///
+/// Implementing it is one line, and it earns [`PluginHost::new`] (which
+/// attaches the slot for you, in the right order) and
+/// [`ui_store_fields!`](crate::ui_store_fields), which writes the two
+/// persistence methods.
+pub trait UiStoreParams: Params {
+    /// The slot this object owns.
+    fn ui_store(&self) -> &StoreSlot;
+}
+
+/// Everything a plug-in holds from this framework, and the order it is built
+/// in.
+///
+/// The three fields — the editor, the bridge and the audio handle — appeared
+/// in every plug-in written against this framework, along with the same
+/// four-step construction: build the editor and bridge together, take the
+/// audio handle, attach the UI store, keep all three. The steps are not
+/// interchangeable. [`take_audio`](NoobVstWebguiFramework::take_audio) yields
+/// its handle **once**, so calling it late (or twice) leaves the audio thread
+/// with nothing to publish through and every meter on the page dark; and
+/// attaching the store after the host has already restored state drops
+/// whatever it restored. Neither failure is loud.
+///
+/// So the sequence lives here once instead of being copied, and a plug-in
+/// holds one field rather than three.
+///
+/// ```ignore
+/// pub struct NoobExample {
+///     params: Arc<NoobExampleParams>,
+///     host: PluginHost,
+///     processor: Processor,
+/// }
+///
+/// impl Default for NoobExample {
+///     fn default() -> Self {
+///         let params = Arc::new(NoobExampleParams::default());
+///         let host = PluginHost::new(
+///             "noob-example",
+///             &params,
+///             dsp::streams(48_000.0),
+///             EditorConfig::new(1000, 620).size_limits((900, 520), (7680, 4320)),
+///             |b| b.meta(serde_json::json!({ "vendor": "Noob Audio Engineering" })),
+///         );
+///         Self { params, host, processor: Processor::new(48_000.0) }
+///     }
+/// }
+/// ```
+pub struct PluginHost {
+    editor: Arc<NoobVstWebguiFrameworkEditor>,
+    bridge: NoobVstWebguiFramework,
+    audio: Option<AudioHandle>,
+}
+
+impl PluginHost {
+    /// Build the editor and bridge, take the audio handle and attach the UI
+    /// store — in that order, which is the one that works.
+    ///
+    /// `customize` is handed to
+    /// [`with_builder`](NoobVstWebguiFrameworkEditor::with_builder) unchanged;
+    /// use it for `b.meta(..)` and for page-only parameters.
+    pub fn new<P: UiStoreParams>(
+        name: &str,
+        params: &Arc<P>,
+        streams: Vec<StreamSpec>,
+        cfg: EditorConfig,
+        customize: impl FnOnce(
+            noob_vst_webgui_framework::NoobVstWebguiFrameworkBuilder,
+        ) -> noob_vst_webgui_framework::NoobVstWebguiFrameworkBuilder,
+    ) -> Self {
+        let (editor, bridge) = NoobVstWebguiFrameworkEditor::with_builder(
+            name,
+            params.as_ref(),
+            streams,
+            cfg,
+            customize,
+        );
+        // Before `attach`: the handle is yielded once and the audio thread
+        // needs it. After `with_builder`: there is no bridge until then.
+        let audio = bridge.take_audio();
+        params.ui_store().attach(&bridge);
+        Self {
+            editor,
+            bridge,
+            audio,
+        }
+    }
+
+    /// What [`Plugin::editor`](nih_plug::prelude::Plugin::editor) returns.
+    /// Cheap; make a new one every time nih-plug asks.
+    pub fn editor(&self) -> Box<dyn Editor> {
+        Box::new(self.editor.handle())
+    }
+
+    /// The editor itself, for the rare caller that needs more than a handle.
+    pub fn editor_ref(&self) -> &Arc<NoobVstWebguiFrameworkEditor> {
+        &self.editor
+    }
+
+    /// The bridge, for `send_json` and the UI store.
+    pub fn bridge(&self) -> &NoobVstWebguiFramework {
+        &self.bridge
+    }
+
+    /// The audio handle, for publishing streams from `process`.
+    ///
+    /// `None` only if it was already taken with [`take_audio`](Self::take_audio).
+    pub fn audio(&mut self) -> Option<&mut AudioHandle> {
+        self.audio.as_mut()
+    }
+
+    /// Move the audio handle out, for a processor that wants to own it.
+    pub fn take_audio(&mut self) -> Option<AudioHandle> {
+        self.audio.take()
+    }
+}
+
+/// The two `Params` methods that persist the UI store, written for you.
+///
+/// Place inside `impl Params for YourParams`, naming the [`StoreSlot`] field.
+/// It expands to exactly what every plug-in here had written by hand:
+///
+/// ```ignore
+/// impl Params for NoobExampleParams {
+///     fn param_map(&self) -> Vec<(String, ParamPtr, String)> { /* yours */ }
+///     noob_vst_webgui_framework_nih::ui_store_fields!(ui_store);
+/// }
+/// ```
+#[macro_export]
+macro_rules! ui_store_fields {
+    ($field:ident) => {
+        fn serialize_fields(&self) -> ::std::collections::BTreeMap<String, String> {
+            let mut m = ::std::collections::BTreeMap::new();
+            self.$field.serialize_into(&mut m);
+            m
+        }
+
+        fn deserialize_fields(&self, serialized: &::std::collections::BTreeMap<String, String>) {
+            self.$field.deserialize_from(serialized);
+        }
+    };
+}
+
+/// Stereo and mono in, the same out — the layout list every effect here uses.
+///
+/// Place inside `impl Plugin for YourPlugin`:
+///
+/// ```ignore
+/// const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] =
+///     noob_vst_webgui_framework_nih::stereo_or_mono_io!();
+/// ```
+///
+/// Hosts pick the first layout they can satisfy, so stereo comes first.
+#[macro_export]
+macro_rules! stereo_or_mono_io {
+    () => {
+        &[
+            ::nih_plug::prelude::AudioIOLayout {
+                main_input_channels: ::std::num::NonZeroU32::new(2),
+                main_output_channels: ::std::num::NonZeroU32::new(2),
+                ..::nih_plug::prelude::AudioIOLayout::const_default()
+            },
+            ::nih_plug::prelude::AudioIOLayout {
+                main_input_channels: ::std::num::NonZeroU32::new(1),
+                main_output_channels: ::std::num::NonZeroU32::new(1),
+                ..::nih_plug::prelude::AudioIOLayout::const_default()
+            },
+        ]
+    };
+}
+
+/// The identity constants that are the same in every plug-in here.
+///
+/// Place inside `impl Plugin for YourPlugin`, after `const NAME`:
+///
+/// ```ignore
+/// impl Plugin for NoobExample {
+///     const NAME: &'static str = "Noob Example";
+///     noob_vst_webgui_framework_nih::noob_identity!();
+///     // ...
+/// }
+/// ```
+///
+/// `URL` and `VERSION` come from the crate's own manifest, so each plug-in
+/// still says its own thing; only the vendor is fixed.
+#[macro_export]
+macro_rules! noob_identity {
+    () => {
+        const VENDOR: &'static str = "Noob Audio Engineering";
+        const URL: &'static str = env!("CARGO_PKG_HOMEPAGE");
+        const EMAIL: &'static str = "";
+        const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+    };
 }
