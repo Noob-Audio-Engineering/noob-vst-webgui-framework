@@ -145,7 +145,7 @@
 //! | thread | owned by | what happens here |
 //! |---|---|---|
 //! | host GUI thread | host | `spawn`, `param_value_changed`, the [`UiTimer`] callback that forwards edits and handles `resize`, web view creation / resize / drop |
-//! | audio thread | host | `process`: reads parameters through nih-plug as usual, publishes streams with [`AudioHandle`](noob_vst_webgui_framework::AudioHandle) (wait-free) |
+//! | audio thread | host | `process`: reads parameters through nih-plug as usual, publishes streams with [`AudioHandle`] (wait-free) |
 //! | `noob-vst-webgui-framework-pump` | noob-vst-webgui-framework | fans parameter changes and stream frames out to clients |
 //! | `noob-vst-webgui-framework-net` | noob-vst-webgui-framework | the WebSocket server; receives edits, messages and store writes |
 //!
@@ -1237,7 +1237,7 @@ impl PluginHost {
         }
     }
 
-    /// What [`Plugin::editor`](nih_plug::prelude::Plugin::editor) returns.
+    /// What [`Plugin::editor`] returns.
     /// Cheap; make a new one every time nih-plug asks.
     pub fn editor(&self) -> Box<dyn Editor> {
         Box::new(self.editor.handle())
