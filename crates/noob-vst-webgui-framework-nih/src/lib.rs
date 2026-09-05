@@ -709,6 +709,41 @@ impl Drop for Instance {
     }
 }
 
+/// How long the editor waits for its first page before saying nothing came.
+///
+/// Long enough that a slow web view start is not reported as a fault, short
+/// enough to appear while somebody is still looking at the window.
+pub const NO_CLIENT_WARN_AFTER: Duration = Duration::from_secs(8);
+
+/// Whether to log that no page has connected: once only, after
+/// [`NO_CLIENT_WARN_AFTER`], and only when nothing is actually connected.
+///
+/// Separated from the timer so it can be tested; the timer itself needs a
+/// host's message loop and cannot be.
+fn should_warn_no_clients(elapsed: Duration, clients: usize, already_warned: bool) -> bool {
+    !already_warned && clients == 0 && elapsed > NO_CLIENT_WARN_AFTER
+}
+
+#[cfg(test)]
+mod watchdog_tests {
+    use super::*;
+
+    #[test]
+    fn warns_once_only_and_only_when_nothing_connected() {
+        let long = NO_CLIENT_WARN_AFTER + Duration::from_millis(1);
+        let short = Duration::from_millis(1);
+        // The case that matters: time has passed and no page arrived.
+        assert!(should_warn_no_clients(long, 0, false));
+        // Quiet while it is still plausibly starting.
+        assert!(!should_warn_no_clients(short, 0, false));
+        assert!(!should_warn_no_clients(NO_CLIENT_WARN_AFTER, 0, false));
+        // A page connected, so there is nothing to report.
+        assert!(!should_warn_no_clients(long, 1, false));
+        // And it is said once, not every tick for the life of the editor.
+        assert!(!should_warn_no_clients(long, 0, true));
+    }
+}
+
 impl Editor for EditorHandle {
     /// Open the editor in the host's window (GUI thread).
     ///
@@ -751,6 +786,9 @@ impl Editor for EditorHandle {
         // window is simply blank. Say it once, with the URL, so the next
         // person has a thread to pull instead of a white rectangle.
         let warn_url = url.clone();
+        // The wiring below cannot be exercised without a host --- the timer
+        // that drives it only runs under a real message loop --- so the
+        // decision itself lives in `should_warn_no_clients`, which can be.
         let spawned_at = std::time::Instant::now();
         let mut warned = false;
         let timer = {
@@ -759,9 +797,9 @@ impl Editor for EditorHandle {
             let webview = webview.clone();
             let ctx = context.clone();
             UiTimer::new(ed.forward_interval, move || {
-                if !warned && spawned_at.elapsed() > std::time::Duration::from_secs(8) {
+                if should_warn_no_clients(spawned_at.elapsed(), editor.client_count(), warned) {
                     warned = true;
-                    if editor.client_count() == 0 {
+                    {
                         match warn_url.as_deref() {
                             Some(u) => nih_log!(
                                 "bridge: no page has connected 8 s after the editor opened.                                  The plug-in is running and the server is up; only its window                                  is empty. Open {u} in a browser to see whether the page                                  itself is healthy."
