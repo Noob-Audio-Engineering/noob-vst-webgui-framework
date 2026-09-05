@@ -1106,7 +1106,7 @@ fn bind_with_policy(ip: IpAddr, policy: PortPolicy) -> io::Result<StdListener> {
             }
             if refused > 0 {
                 log::warn!(
-                    "bridge: ports {base}..{} unavailable ({refused} refused by the OS,                      which reserves blocks in the dynamic range), using an ephemeral port",
+                    "bridge: ports {base}..{} unavailable ({refused} refused by the OS, which reserves blocks in the dynamic range), using an ephemeral port",
                     base.saturating_add(span)
                 );
             } else {
