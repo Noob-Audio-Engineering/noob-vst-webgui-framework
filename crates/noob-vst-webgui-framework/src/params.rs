@@ -125,6 +125,18 @@ pub struct ParamSpec {
     /// adapters read it when registering the parameter with the host.
     /// Default `true`.
     pub automatable: bool,
+    /// How many decimal places the plain value is meaningful to, for
+    /// *display only*. `None` means "no opinion, show what you like".
+    ///
+    /// This exists because a count has no honest continuous rendering: a
+    /// mode budget of 1,024 must not print as `1024.0`, and the two obvious
+    /// ways to make the value itself integral both cost fidelity --- snapping
+    /// with `steps` quantises in the normalized domain *before* the taper, so
+    /// a request for 1,024 lands on 1,021, and an integer table does the
+    /// same. So the value stays exact and the hint travels beside it, and
+    /// **nothing in this crate rounds anything**: it is a note to whoever
+    /// draws the number.
+    pub decimals: Option<u8>,
     /// Normalized -> plain samples at evenly spaced normalized positions,
     /// used when `taper` is [`Taper::Table`]. Must be monotonic (ascending
     /// or descending) and hold at least two points.
@@ -146,6 +158,7 @@ impl ParamSpec {
             steps: 0,
             labels: Vec::new(),
             automatable: true,
+            decimals: None,
             custom_table: None,
         }
     }
@@ -234,6 +247,22 @@ impl ParamSpec {
     pub fn not_automatable(mut self) -> Self {
         self.automatable = false;
         self
+    }
+    /// Say how many decimal places the plain value means, for display.
+    ///
+    /// `.decimals(0)` is the common case: a count, a mode budget, a number
+    /// of voices --- something that should read `1024` and never `1024.0`.
+    /// It changes **nothing** about the value, the taper or the automation;
+    /// it only tells a page how to print it, which is the one thing a page
+    /// otherwise has to special-case by id.
+    pub fn decimals(mut self, places: u8) -> Self {
+        self.decimals = Some(places);
+        self
+    }
+    /// Shorthand for [`decimals(0)`](Self::decimals): the value is a whole
+    /// number.
+    pub fn integer(self) -> Self {
+        self.decimals(0)
     }
 
     /// Plain -> normalized, clamped to `0.0..=1.0`. A zero-width range maps
@@ -366,6 +395,9 @@ pub struct ParamManifest {
     pub labels: Vec<String>,
     /// See [`ParamSpec::automatable`].
     pub automatable: bool,
+    /// See [`ParamSpec::decimals`]. Absent when the spec has no opinion.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decimals: Option<u8>,
     /// [`TABLE_POINTS`] samples of the normalized -> plain mapping.
     pub table: Vec<f32>,
 }
@@ -391,6 +423,7 @@ impl ParamManifest {
             steps: spec.steps,
             labels: spec.labels.clone(),
             automatable: spec.automatable,
+            decimals: spec.decimals,
             table: spec.table(TABLE_POINTS),
         }
     }
@@ -510,6 +543,31 @@ impl ParamStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The display hint reaches the manifest, and stays out of it when the
+    /// spec has no opinion --- an older page must not see a field at all
+    /// rather than see a default it would then obey.
+    #[test]
+    fn the_decimals_hint_travels_and_is_absent_by_default() {
+        let plain = ParamSpec::new("gain", "Gain");
+        assert_eq!(plain.decimals, None);
+        let j = serde_json::to_string(&ParamManifest::from_spec(0, &plain)).unwrap();
+        assert!(!j.contains("decimals"), "absent when unset, got {j}");
+
+        // A count: the value stays exact, only its rendering is pinned.
+        let counted = ParamSpec::new("mode_budget", "Modes")
+            .range(4.0, 4096.0)
+            .default(1024.0)
+            .integer();
+        assert_eq!(counted.decimals, Some(0));
+        assert_eq!(
+            counted.default, 1024.0,
+            "the hint must not quantise the value --- that is what `steps`              would have done, and it lands on 1021"
+        );
+        let m = ParamManifest::from_spec(1, &counted);
+        assert_eq!(m.decimals, Some(0));
+        assert_eq!(m.default, 1024.0);
+    }
 
     fn close(a: f32, b: f32) -> bool {
         (a - b).abs() <= 1e-3 * b.abs().max(1.0)

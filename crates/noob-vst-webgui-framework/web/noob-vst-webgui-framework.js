@@ -139,6 +139,8 @@ export const EventKind = {
  * @property {number} steps         0 for continuous, otherwise the number of discrete positions (2 = toggle).
  * @property {string[]} labels      One label per step for enumerations, else empty.
  * @property {boolean} automatable  False for UI-only parameters the host should not see.
+ * @property {number} [decimals]    Decimal places the plain value is meaningful to, for display only.
+ *                                  `0` means a whole number: print `1024`, never `1024.0`. Absent means no opinion.
  * @property {number[]} table       65 samples of normalized -> plain, always present; used when the taper is `table` or unknown.
  */
 
@@ -473,6 +475,10 @@ export class Param {
    * of 1000 or more with a unit use a `k` prefix (`'2.50 kHz'`,
    * `'12.0 kHz'`); otherwise 0, 1 or 2 decimals depending on magnitude, then
    * the unit. Product-specific formatting belongs in the page, not here.
+   *
+   * A spec carrying `decimals` overrides all of that except labels and
+   * toggles --- including the `k` prefix, since a plug-in that has said
+   * "this is a count" means `1024`, not `1.02 k`.
    * @param {number} [plain=this.plain] Plain value to format.
    * @returns {string}
    */
@@ -485,7 +491,10 @@ export class Param {
     if (s.steps === 2) return plain >= 0.5 ? 'On' : 'Off';
     const a = Math.abs(plain);
     let txt;
-    if (s.steps > 1) {
+    // An explicit hint wins over every rule below it, including the `k`
+    // prefix: a plug-in that says "this is a count" means 1024, not 1.02 k.
+    if (s.decimals != null) txt = plain.toFixed(s.decimals);
+    else if (s.steps > 1) {
       // A stepped parameter's step is `(max - min) / (steps - 1)`, and
       // nothing requires that to be 1: half-decibel switches are ordinary
       // hardware. Rounding to an integer renders two neighbouring detents
@@ -1809,6 +1818,7 @@ export function mockManifest({ name = 'offline', meta = {}, params = [], streams
       skew: taper === 'skew' ? skew : undefined,
       steps,
       labels: p.labels ?? [],
+      decimals: p.decimals,
       automatable: p.automatable ?? true,
       table: Array.from({ length: 65 }, (_, i) => toPlain(i / 64)),
     };
