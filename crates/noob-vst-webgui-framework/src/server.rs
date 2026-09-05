@@ -98,6 +98,7 @@ pub enum WakeMode {
 /// Where the UI's files come from. Paths are matched exactly against the
 /// request path without its leading slash; `/` and paths ending in `/`
 /// become `index.html`. Content types come from the file extension.
+#[derive(Clone)]
 pub enum Assets {
     /// Serve nothing but `/ws` and the built-in client library under
     /// `/noob-vst-webgui-framework/`. Point a dev server at it, or use this while prototyping.
@@ -181,6 +182,7 @@ impl PortPolicy {
 ///
 /// Defaults: loopback, ephemeral port, discovery on, no assets, echoes on,
 /// `Unpark`, 1 ms, 256-message send queue, 1 MiB max message.
+#[derive(Clone)]
 pub struct ServerConfig {
     /// Never a non-loopback address: there is no authentication. Default
     /// `127.0.0.1`.

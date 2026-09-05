@@ -583,11 +583,23 @@ impl NoobVstWebguiFrameworkEditor {
     pub fn ensure_server(&self) -> Option<String> {
         let mut g = self.server.lock().ok()?;
         if g.is_none() {
-            let cfg = self.pending.lock().ok()?.take()?;
+            // Clone rather than take. Taking made the *first* failure
+            // permanent: the config was gone, so every later `spawn` returned
+            // `None` here and the editor could never recover even once the
+            // cause had passed. A port refused by the OS or briefly held by a
+            // dying instance is exactly the kind of failure that goes away on
+            // its own, and closing and reopening the editor should be enough
+            // to pick it up.
+            let cfg = self.pending.lock().ok()?.as_ref()?.clone();
             match noob_vst_webgui_framework::serve(&self.bridge, cfg) {
-                Ok(s) => *g = Some(s),
+                Ok(s) => {
+                    *g = Some(s);
+                    if let Ok(mut p) = self.pending.lock() {
+                        *p = None;
+                    }
+                }
                 Err(e) => {
-                    nih_log!("bridge: could not start server: {e}");
+                    nih_log!("bridge: could not start server: {e}; will try again if reopened");
                     return None;
                 }
             }

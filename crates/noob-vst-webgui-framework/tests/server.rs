@@ -608,11 +608,36 @@ fn http_get(port: u16, path: &str) -> String {
     )
     .unwrap();
     let mut buf = Vec::new();
-    let _ = s.read_to_end(&mut buf);
+    // Read to EOF, and do **not** discard the error. `read_to_end` returns
+    // `Err` with whatever it already had when the timeout trips, so ignoring
+    // it silently yields a truncated body, which then fails to parse as JSON
+    // somewhere far away and looks like a server fault rather than a short
+    // read. Under a parallel test run that is exactly what happened.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let mut chunk = [0u8; 8192];
+        match s.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "GET {path} timed out after {} bytes",
+                    buf.len()
+                );
+            }
+            Err(e) => panic!("GET {path} failed after {} bytes: {e}", buf.len()),
+        }
+    }
     let text = String::from_utf8_lossy(&buf);
     text.split("\r\n\r\n")
         .nth(1)
-        .unwrap_or("")
+        .unwrap_or_else(|| panic!("GET {path}: no body in {} bytes", buf.len()))
         .trim()
         .to_string()
 }
