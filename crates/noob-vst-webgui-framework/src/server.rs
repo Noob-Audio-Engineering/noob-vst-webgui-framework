@@ -139,9 +139,17 @@ pub enum PortPolicy {
     Ephemeral,
     /// Exactly this port; fail if it is taken.
     Fixed(u16),
-    /// Try `base`, `base + 1`, … `base + span - 1` in turn, then fall back to
-    /// an ephemeral port. The first instance of a plug-in lands on the same
-    /// port every time, later instances take the next free ones.
+    /// Try `base`, `base + 1`, … `base + span - 1` in turn. The first
+    /// instance of a plug-in lands on the same port every time, later
+    /// instances take the next free ones.
+    ///
+    /// If the whole span is unavailable --- busy, or refused because the OS
+    /// reserves a block there --- further spans derived from `base` are tried
+    /// before an ephemeral port is taken as a last resort. Those alternates
+    /// are deterministic on purpose: the page's origin is its port, and a
+    /// browser keys storage to the origin, so a plug-in that has to move must
+    /// still move to the *same* place every launch or the page starts from
+    /// nothing each time.
     Probe { base: u16, span: u16 },
 }
 
@@ -1066,9 +1074,12 @@ impl Drop for ServerHandle {
     }
 }
 
-/// Bind a listener according to `policy`. For `Probe`, `AddrInUse` moves on
-/// to the next port and any other error aborts; when the whole span is busy
-/// an ephemeral port is used with a warning.
+/// Bind a listener according to `policy`.
+///
+/// For `Probe`, a port that is busy *or* refused by the OS moves on to the
+/// next; any other error aborts. When a whole span is gone, the alternates
+/// from [`alternate_base`] are tried, and only then an ephemeral port, with a
+/// warning saying what that costs.
 /// How many further spans a [`PortPolicy::Probe`] tries before giving up and
 /// taking an ephemeral port. Eight alternates at a span of 64 is 576 ports,
 /// which clears any single reserved block comfortably.
