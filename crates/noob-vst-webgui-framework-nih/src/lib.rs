@@ -613,6 +613,17 @@ impl NoobVstWebguiFrameworkEditor {
         self.server.lock().ok()?.as_ref().map(|s| s.url())
     }
 
+    /// How many pages are connected right now. `0` before the web view has
+    /// loaded, and `0` forever if it never does --- which is what
+    /// [`spawn`](Editor::spawn)'s watchdog reports.
+    pub fn client_count(&self) -> usize {
+        self.server
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|s| s.client_count()))
+            .unwrap_or(0)
+    }
+
     /// The current editor size in logical pixels: the configured size, or
     /// the last size the page requested with a `resize` message.
     pub fn size(&self) -> (u32, u32) {
@@ -736,12 +747,31 @@ impl Editor for EditorHandle {
         // the UI thread by a native timer.
         let forward = ed.forwarder(context.clone());
         let parent_raw = raw_parent(&parent);
+        // If the web view never navigates, nothing anywhere says so: the
+        // window is simply blank. Say it once, with the URL, so the next
+        // person has a thread to pull instead of a white rectangle.
+        let warn_url = url.clone();
+        let spawned_at = std::time::Instant::now();
+        let mut warned = false;
         let timer = {
             let bridge = ed.bridge.clone();
             let editor = ed.clone();
             let webview = webview.clone();
             let ctx = context.clone();
             UiTimer::new(ed.forward_interval, move || {
+                if !warned && spawned_at.elapsed() > std::time::Duration::from_secs(8) {
+                    warned = true;
+                    if editor.client_count() == 0 {
+                        match warn_url.as_deref() {
+                            Some(u) => nih_log!(
+                                "bridge: no page has connected 8 s after the editor opened.                                  The plug-in is running and the server is up; only its window                                  is empty. Open {u} in a browser to see whether the page                                  itself is healthy."
+                            ),
+                            None => nih_log!(
+                                "bridge: the editor opened with no server, so its window will                                  stay empty"
+                            ),
+                        }
+                    }
+                }
                 bridge.drain_edits(|e| forward(e));
                 // The host resized the window (see `Editor::set_size`): the
                 // web view follows and the size is remembered like a page
