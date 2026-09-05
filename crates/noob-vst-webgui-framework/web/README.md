@@ -510,6 +510,15 @@ Fills its parent (which must have a size); exposes `resetClip()`.
 
 Every series maps its own `range` onto the full height, so levels in dBFS and a gain reduction in dB share one chart. Colours are the caller's; the grid uses `--noob-vst-webgui-framework-grid` / `-text-dim`. Exposes `push(series, value)` for series without a stream. Fills its parent.
 
+> **`series` is read once, on mount, and never again.** That is what "resolved on mount" in the table
+> means, and it is easy to read past. A chart brought into existence later by a `v-if`, or replaced
+> because its `:key` changed, subscribes to nothing and then draws its grid, its legend and its time
+> ticks with no traces on it — which looks like a data problem rather than a lifecycle one, and costs
+> real time to chase. A plug-in on this framework lost an afternoon to it.
+>
+> So fix the series at first render. If the set of series genuinely has to change, remount the chart
+> deliberately and know that you are doing it, rather than letting a reactive `:key` do it silently.
+
 **`LinePlot`** — XY curve chart (wrapper over the canvas `LinePlot`): transfer curves, responses, tables.
 
 | prop | default | meaning |
