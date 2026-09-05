@@ -53,21 +53,16 @@
 //!             ("drive".into(), self.drive.as_ptr(), "filter".into()),
 //!         ]
 //!     }
-//!     fn serialize_fields(&self) -> BTreeMap<String, String> {
-//!         let mut m = BTreeMap::new();
-//!         self.ui_store.serialize_into(&mut m);
-//!         m
-//!     }
-//!     fn deserialize_fields(&self, m: &BTreeMap<String, String>) {
-//!         self.ui_store.deserialize_from(m);
-//!     }
+//!     noob_vst_webgui_framework_nih::ui_store_fields!(ui_store);
+//! }
+//!
+//! impl UiStoreParams for MyParams {
+//!     fn ui_store(&self) -> &StoreSlot { &self.ui_store }
 //! }
 //!
 //! struct MyPlugin {
 //!     params: Arc<MyParams>,
-//!     editor: Arc<NoobVstWebguiFrameworkEditor>,
-//!     bridge: NoobVstWebguiFramework,
-//!     audio: Option<AudioHandle>,
+//!     host: PluginHost,
 //! }
 //!
 //! impl Default for MyPlugin {
@@ -77,16 +72,18 @@
 //!             StreamSpec::new("meter", 2).kind(StreamKind::Meter).channels(2),
 //!             StreamSpec::new("spectrum", 1025).kind(StreamKind::Spectrum),
 //!         ];
-//!         let (editor, bridge) = NoobVstWebguiFrameworkEditor::with_builder(
+//!         // `PluginHost` builds the editor and the bridge, takes the audio
+//!         // handle (yielded exactly once) and attaches the UI store, in the
+//!         // one order that works. Doing it by hand is how plug-ins used to
+//!         // get a silent dark meter or a dropped preset.
+//!         let host = PluginHost::new(
 //!             "My Plugin",
-//!             params.as_ref(),
+//!             &params,
 //!             streams,
 //!             EditorConfig::new(1000, 640).assets(Assets::Lookup(ui_lookup)),
 //!             |b| b.meta(serde_json::json!({ "vendor": "Me", "sample_rate": 48_000.0 })),
 //!         );
-//!         let audio = bridge.take_audio();      // Some(..) exactly once
-//!         params.ui_store.attach(&bridge);      // any time; before or after state restore
-//!         MyPlugin { params, editor, bridge, audio }
+//!         MyPlugin { params, host }
 //!     }
 //! }
 //!
@@ -95,18 +92,18 @@
 //!     fn params(&self) -> Arc<dyn Params> { self.params.clone() }
 //!
 //!     fn editor(&mut self, _: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-//!         Some(Box::new(self.editor.handle()))
+//!         Some(self.host.editor())
 //!     }
 //!
 //!     fn initialize(&mut self, _: &AudioIOLayout, cfg: &BufferConfig, _: &mut impl InitContext<Self>) -> bool {
 //!         // Anything the page should know that is not a parameter:
-//!         self.bridge.send_json("sample_rate", serde_json::json!({ "sample_rate": cfg.sample_rate }));
+//!         self.host.bridge().send_json("sample_rate", serde_json::json!({ "sample_rate": cfg.sample_rate }));
 //!         true
 //!     }
 //!
 //!     fn process(&mut self, buffer: &mut Buffer, _: &mut AuxiliaryBuffers, _: &mut impl ProcessContext<Self>) -> ProcessStatus {
 //!         // ... DSP using self.params ...
-//!         if let Some(audio) = self.audio.as_mut() {
+//!         if let Some(audio) = self.host.audio() {
 //!             audio.publish_slice(0, &[peak_l, peak_r]);   // wait-free, latest wins
 //!         }
 //!         ProcessStatus::Normal
