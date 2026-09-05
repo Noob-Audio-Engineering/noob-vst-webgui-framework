@@ -1069,52 +1069,78 @@ impl Drop for ServerHandle {
 /// Bind a listener according to `policy`. For `Probe`, `AddrInUse` moves on
 /// to the next port and any other error aborts; when the whole span is busy
 /// an ephemeral port is used with a warning.
+/// How many further spans a [`PortPolicy::Probe`] tries before giving up and
+/// taking an ephemeral port. Eight alternates at a span of 64 is 576 ports,
+/// which clears any single reserved block comfortably.
+const ALTERNATE_SPANS: u16 = 8;
+
+/// The `n`th span base for a probe that started at `base`, wrapping inside the
+/// dynamic range. Deterministic, so a plug-in that has to move still lands on
+/// the *same* port every launch --- which is the whole point of probing rather
+/// than taking an ephemeral port. The stride is coprime with the range so the
+/// alternates do not revisit.
+fn alternate_base(base: u16, n: u16) -> u16 {
+    const RANGE: u32 = 15_000;
+    const STRIDE: u32 = 1_499;
+    let off = (base as u32).saturating_sub(49_152) % RANGE;
+    49_152 + ((off + STRIDE * n as u32) % RANGE) as u16
+}
+
 fn bind_with_policy(ip: IpAddr, policy: PortPolicy) -> io::Result<StdListener> {
     match policy {
         PortPolicy::Ephemeral => StdListener::bind(SocketAddr::new(ip, 0)),
         PortPolicy::Fixed(port) => StdListener::bind(SocketAddr::new(ip, port)),
         PortPolicy::Probe { base, span } => {
             let mut refused = 0u16;
-            for i in 0..span.max(1) {
-                let port = base.saturating_add(i);
-                match StdListener::bind(SocketAddr::new(ip, port)) {
-                    Ok(l) => {
-                        if i > 0 {
-                            log::info!("bridge: port {base} busy, using {port}");
+            // Spans tried in order, all derived from `base` so they are the
+            // same on every launch. An ephemeral port would work, but it
+            // changes each time, and the page's *origin* is the port --- so
+            // the browser would key its storage to a different origin on every
+            // launch and the page would forget everything it had kept. Walking
+            // to another deterministic span keeps the port stable instead.
+            for attempt in 0..=ALTERNATE_SPANS {
+                let base = alternate_base(base, attempt);
+                for i in 0..span.max(1) {
+                    let port = base.saturating_add(i);
+                    match StdListener::bind(SocketAddr::new(ip, port)) {
+                        Ok(l) => {
+                            if i > 0 || attempt > 0 {
+                                log::info!("bridge: using port {port}");
+                            }
+                            return Ok(l);
                         }
-                        return Ok(l);
-                    }
-                    // Busy is ordinary: another instance has it. Refused is
-                    // not, and is the one that used to be fatal --- Windows
-                    // reserves whole blocks inside the dynamic range for
-                    // Hyper-V, and a name whose hash lands in one had every
-                    // port in its span refused with `PermissionDenied`. That
-                    // returned here, so the server never started, the web view
-                    // had nothing to load, and the plug-in showed an inert
-                    // white rectangle with no error anywhere the user could
-                    // see it. Both mean "not this port"; only the fallback
-                    // decides whether we have run out.
-                    Err(e)
-                        if e.kind() == io::ErrorKind::AddrInUse
-                            || e.kind() == io::ErrorKind::PermissionDenied =>
-                    {
-                        if e.kind() == io::ErrorKind::PermissionDenied {
-                            refused += 1;
+                        // Busy is ordinary: another instance has it. Refused is
+                        // not, and is the one that used to be fatal --- Windows
+                        // reserves whole blocks inside the dynamic range for
+                        // Hyper-V, and a name whose hash lands in one had every
+                        // port in its span refused with `PermissionDenied`. That
+                        // returned here, so the server never started, the web view
+                        // had nothing to load, and the plug-in showed an inert
+                        // white rectangle with no error anywhere the user could
+                        // see it. Both mean "not this port"; only the fallback
+                        // decides whether we have run out.
+                        Err(e)
+                            if e.kind() == io::ErrorKind::AddrInUse
+                                || e.kind() == io::ErrorKind::PermissionDenied =>
+                        {
+                            if e.kind() == io::ErrorKind::PermissionDenied {
+                                refused += 1;
+                            }
+                            continue;
                         }
-                        continue;
+                        Err(e) => return Err(e),
                     }
-                    Err(e) => return Err(e),
                 }
             }
             if refused > 0 {
                 log::warn!(
-                    "bridge: ports {base}..{} unavailable ({refused} refused by the OS, which reserves blocks in the dynamic range), using an ephemeral port",
-                    base.saturating_add(span)
+                    "bridge: {} spans from {base} unavailable ({refused} ports refused by the OS, which reserves blocks in the dynamic range), using an ephemeral port --- the page's stored state will not survive a restart",
+                    ALTERNATE_SPANS + 1
                 );
             } else {
                 log::warn!(
-                    "bridge: ports {base}..{} all busy, using an ephemeral port",
-                    base.saturating_add(span)
+                    "bridge: {} spans from {base} all busy, using an ephemeral port",
+                    ALTERNATE_SPANS + 1
                 );
             }
             StdListener::bind(SocketAddr::new(ip, 0))
@@ -1235,4 +1261,69 @@ pub fn serve(bridge: &NoobVstWebguiFramework, cfg: ServerConfig) -> io::Result<S
         shared,
         discovery_path,
     })
+}
+
+#[cfg(test)]
+mod alternate_base_tests {
+    use super::*;
+
+    /// The real thing, on whatever machine runs it: a probe whose first span
+    /// is entirely reserved must still land on a *stable* port rather than an
+    /// ephemeral one. On a machine with no reserved block here it binds the
+    /// base and passes trivially, which is the correct outcome too.
+    #[test]
+    fn a_reserved_span_still_yields_a_stable_port() {
+        let ip: IpAddr = [127, 0, 0, 1].into();
+        let l = bind_with_policy(
+            ip,
+            PortPolicy::Probe {
+                base: 49_849,
+                span: 64,
+            },
+        )
+        .expect("a probe must always bind something");
+        let port = l.local_addr().unwrap().port();
+        let stable = (0..=ALTERNATE_SPANS)
+            .map(|n| alternate_base(49_849, n))
+            .any(|b| (b..b.saturating_add(64)).contains(&port));
+        assert!(
+            stable,
+            "bound {port}, which is outside every deterministic span --- the page's              stored state would not survive a restart"
+        );
+    }
+
+    #[test]
+    fn alternates_are_stable_distinct_and_in_range() {
+        // The resonator's real base, the one that landed inside Windows'
+        // reserved 49841..49940 block and left the plug-in with no server.
+        let base = 49_849u16;
+        let seen: Vec<u16> = (0..=ALTERNATE_SPANS)
+            .map(|n| alternate_base(base, n))
+            .collect();
+
+        // Stable: the same launch after launch, which is why the page keeps
+        // its browser storage.
+        for n in 0..=ALTERNATE_SPANS {
+            assert_eq!(alternate_base(base, n), seen[n as usize]);
+        }
+        // The first attempt is the name's own base, untouched.
+        assert_eq!(seen[0], base);
+        // Distinct, so no attempt is wasted retrying a span already refused.
+        let mut sorted = seen.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), seen.len(), "alternates revisit: {seen:?}");
+        // All inside the dynamic range, with room for a 64-port span.
+        for p in &seen {
+            assert!(
+                (49_152..=64_151).contains(p),
+                "{p} outside the dynamic range"
+            );
+        }
+        // And at least one clears the reserved block that caused this.
+        assert!(
+            seen.iter().any(|p| !(49_841..=49_940).contains(p)),
+            "no alternate escapes the reserved block"
+        );
+    }
 }
