@@ -1072,6 +1072,7 @@ fn bind_with_policy(ip: IpAddr, policy: PortPolicy) -> io::Result<StdListener> {
         PortPolicy::Ephemeral => StdListener::bind(SocketAddr::new(ip, 0)),
         PortPolicy::Fixed(port) => StdListener::bind(SocketAddr::new(ip, port)),
         PortPolicy::Probe { base, span } => {
+            let mut refused = 0u16;
             for i in 0..span.max(1) {
                 let port = base.saturating_add(i);
                 match StdListener::bind(SocketAddr::new(ip, port)) {
@@ -1081,14 +1082,39 @@ fn bind_with_policy(ip: IpAddr, policy: PortPolicy) -> io::Result<StdListener> {
                         }
                         return Ok(l);
                     }
-                    Err(e) if e.kind() == io::ErrorKind::AddrInUse => continue,
+                    // Busy is ordinary: another instance has it. Refused is
+                    // not, and is the one that used to be fatal --- Windows
+                    // reserves whole blocks inside the dynamic range for
+                    // Hyper-V, and a name whose hash lands in one had every
+                    // port in its span refused with `PermissionDenied`. That
+                    // returned here, so the server never started, the web view
+                    // had nothing to load, and the plug-in showed an inert
+                    // white rectangle with no error anywhere the user could
+                    // see it. Both mean "not this port"; only the fallback
+                    // decides whether we have run out.
+                    Err(e)
+                        if e.kind() == io::ErrorKind::AddrInUse
+                            || e.kind() == io::ErrorKind::PermissionDenied =>
+                    {
+                        if e.kind() == io::ErrorKind::PermissionDenied {
+                            refused += 1;
+                        }
+                        continue;
+                    }
                     Err(e) => return Err(e),
                 }
             }
-            log::warn!(
-                "bridge: ports {base}..{} all busy, using an ephemeral port",
-                base.saturating_add(span)
-            );
+            if refused > 0 {
+                log::warn!(
+                    "bridge: ports {base}..{} unavailable ({refused} refused by the OS,                      which reserves blocks in the dynamic range), using an ephemeral port",
+                    base.saturating_add(span)
+                );
+            } else {
+                log::warn!(
+                    "bridge: ports {base}..{} all busy, using an ephemeral port",
+                    base.saturating_add(span)
+                );
+            }
             StdListener::bind(SocketAddr::new(ip, 0))
         }
     }
