@@ -12,3 +12,8 @@ npm-debug.log*
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Coverage and doc builds land beside `target`. `git add -A` swept 840 of
+# these rustdoc files into a commit once, on a `git status | head -5` that
+# hid them.
+/target-*/
