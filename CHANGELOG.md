@@ -8,6 +8,26 @@ the workspace version in `Cargo.toml`.
 
 ### Fixed
 
+- **A plug-in window can be resized on macOS.** It could not, and that was
+  less a missing feature than a silently missing half of the editor:
+  draining the edit queue, applying a size the page asks for, and applying
+  one the host asks for all happen in the UI-thread timer's callback --- and
+  `UiTimer::new` returned `None` on every platform except Windows. So
+  `Editor::set_size` set a `host_resized` flag that nothing ever read, a
+  `resize` message from the page reached no one, and the window stayed the
+  size it opened at. Nothing failed; the request simply had nobody to answer
+  it.
+
+  macOS now gets an `NSTimer` on the host's run loop, added in
+  `NSRunLoopCommonModes` rather than the default mode --- a host leaves the
+  default mode for the whole of a window drag, which is exactly when a
+  resize is happening, so a timer scheduled the ordinary way would go quiet
+  at the only moment it is needed. A tick arriving while the previous one
+  still runs is dropped rather than re-entered, because this runs inside a
+  host's message loop where a panic is an abort. There is a test: the timer
+  is created, a run loop is run, and it must have fired --- and must stop
+  once dropped.
+
 - **Two Noob plug-ins in one project no longer take the host down with
   them.** Up to wry 0.55 the macOS backend named its Objective-C classes
   explicitly --- `WryWebView` and seven more. Those names are registered

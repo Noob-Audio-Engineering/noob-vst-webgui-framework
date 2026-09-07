@@ -63,6 +63,9 @@
 //! the queue. A plug-in does not own the host's message loop and cannot run
 //! its own, so [`UiTimer`] asks the host's loop to call back periodically:
 //!
+//! * On macOS it is an `NSTimer` on the host's run loop, added in
+//!   `NSRunLoopCommonModes` so it keeps firing through a window drag --- the
+//!   moment a resize actually happens.
 //! * On Windows it is a `SetTimer` with a null window handle, which makes it
 //!   a *thread* timer: the `WM_TIMER` message is posted to the queue of the
 //!   creating thread, and the host's message pump dispatches it to our
@@ -356,8 +359,9 @@ fn bounds(width: u32, height: u32) -> wry::Rect {
 ///
 /// See the crate docs for why plug-in adapters need this and how it is
 /// implemented. In short: on Windows it is a `WM_TIMER` thread timer whose
-/// callback lives in a thread-local table; elsewhere [`new`](Self::new)
-/// returns `None` and callers do their periodic work from another thread.
+/// callback lives in a thread-local table; on macOS an `NSTimer` added to the
+/// run loop in `NSRunLoopCommonModes`; elsewhere [`new`](Self::new) returns
+/// `None` and callers do their periodic work from another thread.
 ///
 /// The callback runs on the creating thread only, so it may touch
 /// thread-bound objects such as an [`EmbeddedWebView`]. It should be quick
@@ -366,7 +370,11 @@ fn bounds(width: u32, height: u32) -> wry::Rect {
 pub struct UiTimer {
     #[cfg(windows)]
     id: usize,
-    #[cfg(not(windows))]
+    /// Held only so that dropping the `UiTimer` invalidates it; nothing
+    /// reads it, which is why it is named like the other drop guards here.
+    #[cfg(target_os = "macos")]
+    _mac: mac_timer::Timer,
+    #[cfg(not(any(windows, target_os = "macos")))]
     _private: (),
 }
 
@@ -431,16 +439,80 @@ mod win_timer {
     }
 }
 
+/// AppKit implementation: an `NSTimer` on the current thread's run loop.
+///
+/// **Added in common modes, not the default one.** A plug-in editor lives
+/// inside somebody else's run loop, and that loop leaves the default mode for
+/// the whole of a window drag or a menu --- exactly when a resize is
+/// happening. A timer scheduled the usual way goes quiet for the duration,
+/// which is the one moment it is needed. `NSRunLoopCommonModes` keeps it
+/// firing.
+#[cfg(target_os = "macos")]
+mod mac_timer {
+    use block2::RcBlock;
+    use objc2::rc::Retained;
+    use objc2_foundation::{NSRunLoop, NSRunLoopCommonModes, NSTimer};
+    use std::cell::RefCell;
+    use std::time::Duration;
+
+    /// A scheduled timer and the callback it owns.
+    pub struct Timer {
+        timer: Retained<NSTimer>,
+    }
+
+    /// Create a repeating timer on this thread's run loop.
+    ///
+    /// The callback is boxed into a `RefCell` so the block can call it
+    /// mutably; the run loop calls the block on this thread only, and a
+    /// re-entrant call would find the cell already borrowed and skip that
+    /// tick rather than panic.
+    pub fn start(interval: Duration, f: Box<dyn FnMut()>) -> Option<Timer> {
+        let cell = RefCell::new(f);
+        let block = RcBlock::new(move |_t: core::ptr::NonNull<NSTimer>| {
+            // A tick that arrives while the previous one is still running is
+            // dropped. Re-entering here would panic on the borrow, and this
+            // runs inside a host's message loop where a panic is an abort.
+            if let Ok(mut f) = cell.try_borrow_mut() {
+                f();
+            }
+        });
+        // Not `scheduledTimerWithTimeInterval...`: that adds the timer in the
+        // default mode only. Build it unscheduled and add it in common modes.
+        // SAFETY: both are ordinary Foundation calls on the current thread,
+        // and the block outlives the timer because the timer retains it.
+        let timer = unsafe {
+            NSTimer::timerWithTimeInterval_repeats_block(
+                interval.as_secs_f64().max(0.001),
+                true,
+                &block,
+            )
+        };
+        // SAFETY: adding a timer to this thread's run loop.
+        unsafe {
+            NSRunLoop::currentRunLoop().addTimer_forMode(&timer, NSRunLoopCommonModes);
+        }
+        Some(Timer { timer })
+    }
+
+    impl Drop for Timer {
+        fn drop(&mut self) {
+            // Invalidate removes it from the run loop and releases the block.
+            // Must happen on the thread that scheduled it, which is the same
+            // thread that drops the editor.
+            self.timer.invalidate();
+        }
+    }
+}
+
 impl UiTimer {
     /// Start a timer on the current thread that calls `f` about every
     /// `interval` (rounded up to whole milliseconds, minimum 1 ms; the real
     /// period is bounded below by the OS timer resolution).
     ///
-    /// Returns `None` where no native timer is available (every platform
-    /// except Windows today, or if the OS refused to create one); callers
-    /// should then do the periodic work from another thread. The callback
-    /// must be `'static` because the host's message loop, not this function,
-    /// invokes it.
+    /// Returns `None` where no native timer is available (Linux today, or if
+    /// the OS refused to create one); callers should then do the periodic
+    /// work from another thread. The callback must be `'static` because the
+    /// host's message loop, not this function, invokes it.
     #[allow(unused_variables)]
     pub fn new(interval: Duration, f: impl FnMut() + 'static) -> Option<UiTimer> {
         #[cfg(windows)]
@@ -448,7 +520,12 @@ impl UiTimer {
             let id = win_timer::start(interval.as_millis().max(1) as u32, Box::new(f))?;
             Some(UiTimer { id })
         }
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
+        {
+            let _mac = mac_timer::start(interval, Box::new(f))?;
+            Some(UiTimer { _mac })
+        }
+        #[cfg(not(any(windows, target_os = "macos")))]
         {
             None
         }
@@ -505,5 +582,53 @@ pub fn monitor_work_area(parent: &RawParent) -> Option<(u32, u32)> {
     {
         let _ = parent;
         None
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod ui_timer_tests {
+    use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    /// **macOS has a UI-thread timer, and it fires.**
+    ///
+    /// It did not, and that was not a missing feature so much as a silently
+    /// missing half of the editor: draining the edit queue, applying a resize
+    /// the page asked for, and applying one the host asked for all happen in
+    /// this callback. `UiTimer::new` returned `None` everywhere but Windows,
+    /// so on macOS `Editor::set_size` set a flag that nothing ever read and
+    /// the window could not be resized at all.
+    #[test]
+    fn the_timer_exists_and_fires_on_the_run_loop() {
+        use objc2_foundation::{NSDate, NSRunLoop};
+
+        let ticks = Rc::new(Cell::new(0u32));
+        let seen = ticks.clone();
+        let timer = UiTimer::new(Duration::from_millis(5), move || {
+            seen.set(seen.get() + 1);
+        });
+        assert!(timer.is_some(), "macOS should have a UI-thread timer");
+
+        // Nothing fires until a run loop runs --- which is the point: the
+        // host's loop drives it, and here this stands in for the host's.
+        let until = NSDate::dateWithTimeIntervalSinceNow(0.25);
+        NSRunLoop::currentRunLoop().runUntilDate(&until);
+        assert!(
+            ticks.get() > 0,
+            "the timer was created but never fired: the editor would look alive and ignore every resize"
+        );
+
+        // And dropping it stops the callback, or a closed editor would go on
+        // being called with a web view that is gone.
+        let before = ticks.get();
+        drop(timer);
+        let until = NSDate::dateWithTimeIntervalSinceNow(0.1);
+        NSRunLoop::currentRunLoop().runUntilDate(&until);
+        assert_eq!(
+            ticks.get(),
+            before,
+            "the timer kept firing after it was dropped"
+        );
     }
 }

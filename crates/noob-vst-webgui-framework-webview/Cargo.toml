@@ -35,5 +35,13 @@ raw-window-handle = "0.6"
 # what a plug-in is.
 wry = { version = "0.56", default-features = false, features = ["os-webview"] }
 
+# The UI-thread timer on macOS is an `NSTimer` on the host's run loop --- see
+# `UiTimer`. Without one, nothing on this platform drains the edit queue or
+# applies a resize, because that work is what the timer exists to do.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSDate", "NSRunLoop", "NSString", "NSTimer"] }
+block2 = "0.6"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }

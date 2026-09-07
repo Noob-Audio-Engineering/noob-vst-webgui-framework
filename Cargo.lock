@@ -1408,7 +1408,10 @@ dependencies = [
 name = "noob-vst-webgui-framework-webview"
 version = "0.1.0"
 dependencies = [
+ "block2",
  "log",
+ "objc2",
+ "objc2-foundation",
  "raw-window-handle 0.6.2",
  "windows-sys 0.60.2",
  "wry",
