@@ -18,7 +18,22 @@ devtools = ["wry/devtools"]
 [dependencies]
 log.workspace = true
 raw-window-handle = "0.6"
-wry = { version = "0.53", default-features = false, features = ["os-webview"] }
+# **0.56, not 0.53, and the reason is a crash rather than a feature.**
+#
+# Up to 0.55 wry named its Objective-C classes explicitly --- `WryWebView`,
+# `WryNavigationDelegate`, and six more. A name is registered once per
+# *process*, and every plug-in is its own dynamic library with its own copy of
+# wry, so the first editor to open registered them and the second one asked
+# for a name that was taken. `objc2` panics there, and it panics across an
+# `extern "C"` frame, which is an abort: the host went down, taking the set
+# with it. Two Noob plug-ins in one project was enough.
+#
+# 0.56 removes those names. `objc2` then generates one and, for a generated
+# name, *reuses* the class another library already registered instead of
+# refusing --- which its documentation calls the way to be usable "across
+# multiple shared dynamic libraries in the same process". That is exactly
+# what a plug-in is.
+wry = { version = "0.56", default-features = false, features = ["os-webview"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }

@@ -8,6 +8,25 @@ the workspace version in `Cargo.toml`.
 
 ### Fixed
 
+- **Two Noob plug-ins in one project no longer take the host down with
+  them.** Up to wry 0.55 the macOS backend named its Objective-C classes
+  explicitly --- `WryWebView` and seven more. Those names are registered
+  once per *process*, and every plug-in is a separate dynamic library
+  carrying its own copy of wry, so the first editor to open claimed them and
+  the second asked for a name that was taken. `objc2` panics there, and it
+  panics inside `IPlugView::attached`, an `extern "C"` frame, where a panic
+  is not an error but an abort --- Ableton Live died on the spot, unsaved
+  set included. Opening the *first* editor was always fine, which is why it
+  read as one bad plug-in rather than as a rule about the second one.
+
+  wry 0.56 drops those names. `objc2` then generates one, and for a
+  generated name it *reuses* the class another library has already
+  registered instead of refusing --- the case its documentation describes as
+  being usable "across multiple shared dynamic libraries in the same
+  process", which is what a plug-in is. Verified in Live 11 on macOS 26 with
+  the pair that reproduced it: both editors open, both pages connect, the
+  host stays up.
+
 - A stepped parameter's displayed value is rounded to its own step rather
   than to an integer. The step is `(max - min) / (steps - 1)` and nothing
   requires that to be 1: a half-decibel switch is ordinary hardware, and two
